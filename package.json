@@ -1,0 +1,13 @@
+{
+  "name": "sidenote-pdf-doc",
+  "private": true,
+  "version": "0.1.0",
+  "description": "準備書面等の文書を作成しながらサイドノートで検討メモを付けるアプリ（ブラウザ完結・Cloudflare Pages）",
+  "scripts": {
+    "dev": "wrangler pages dev",
+    "deploy": "wrangler pages deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.105.0"
+  }
+}

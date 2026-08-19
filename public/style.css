@@ -1,0 +1,341 @@
+* { box-sizing: border-box; }
+body {
+  margin: 0; color: #31333f; background: #fff; padding: 28px 40px 100px;
+  font-family: "Source Sans Pro", system-ui, "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+}
+/* https://pdf-redactor.pages.dev/ の.app-titleをそのまま踏襲（黒地に白抜き）。 */
+.app-title {
+  font-weight: 400; font-size: 26px; line-height: 1.35; text-align: center;
+  background: #000; color: #fff; padding: 10px 12px; border-radius: 8px; margin: 0 0 16px;
+}
+/* タイトル・ヒントを大枠で囲む（枠は主張しすぎない薄さ・細さにする）。
+   中央寄せ＋左右の余白（MkDocsの本文カラムのイメージ）で、A4的な縦長の版面にも対応する。
+   ツールバーはここに含めない：position:stickyは自分の親の高さまでしか効かないため、
+   この枠の中に入れると長い文章をスクロールした時に枠ごと画面外へ流れて隠れてしまう
+   （bodyの直下に別要素として置き、文書の最後までスクロールしても固定され続けるようにする）。 */
+.app-frame { border: 1px solid #e2e4e9; border-radius: 12px; padding: 24px 28px; max-width: 900px; margin: 0 auto 16px; }
+.hint { font-size: 13px; color: #666; line-height: 1.8; margin-bottom: 4px; max-width: 900px; }
+.hint b { color: #31333f; }
+/* 文章が長くなるとインデント等のボタンに手が届かなくなるため、ツールバーを画面上部に固定する。 */
+.toolbar-sticky {
+  position: sticky; top: 8px; z-index: 20; background: #fff;
+  max-width: 900px; margin: 0 auto 16px; padding-top: 4px;
+}
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; align-items: center; }
+/* ボタン・ファイル選択ラベルは高さ・幅を全て揃えて1列に並べる（ラベルの長さに関わらず同じ幅）。
+   幅は最も長い「続きから再開」に合わせる。短い文字はwidthの中で中央寄せにする。 */
+/* 罫線ではなくグレーの塗りつぶしで見せる（枠線の主張を抑える方針）。 */
+.toolbar button, .toolbar .filebtn2 {
+  font-size: 13px; height: 34px; width: 118px; padding: 0 12px; border-radius: 6px; border: none;
+  background: #eef0f3; color: #31333f; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+}
+.icon { width: 1.05em; height: 1.05em; flex: none; }   /* Bootstrap Icons（MITライセンス）のSVGを絵文字の代わりに使う */
+.toolbar button:hover, .toolbar .filebtn2:hover { background: #e2e4e9; color: #ff4b4b; }
+.toolbar button:disabled { background: #f5f6f8; color: #b7bac2; cursor: not-allowed; }
+.toolbar .filebtn2 input { display: none; }
+.toolbar .sep { width: 1px; height: 22px; background: #e2e4e9; margin: 0 2px; }
+
+/* ── 本文の書式ツールバー（配置／インデント／ぶら下げ／太字下線／文字サイズ） ──
+   ファイル操作の.toolbarとは幅・並びの性格が違う（ラベルの長さがバラバラ）ため、
+   固定幅118pxは踏襲せず、ボタンごとに中身の幅に合わせる。 */
+.toolbar-format { row-gap: 6px; }
+/* ラベルとそのボタン群を1つの塊にする。分けたままだと折り返し（flex-wrap）の際に
+   ラベルだけ前の行に残りボタンが次の行に落ちる、といった分離が起きるため。 */
+.fmt-unit { display: inline-flex; align-items: center; gap: 6px; }
+.fmt-group-label { font-size: 11.5px; color: #8a8f98; }
+.fmt-group { display: inline-flex; align-items: center; gap: 4px; }
+.fmt-btn {
+  font-size: 13px; height: 28px; min-width: 28px; padding: 0 8px; border-radius: 6px; border: none;
+  background: #eef0f3; color: #31333f; cursor: pointer;
+}
+.fmt-btn:hover { background: #e2e4e9; color: #ff4b4b; }
+.fmt-btn:disabled { background: #f5f6f8; color: #b7bac2; cursor: not-allowed; }
+/* 選択中／適用中の状態は色を反転させて示す（note-popover .primaryと同じ赤地・白文字）。 */
+.fmt-btn.active { background: #ff4b4b; color: #fff; }
+.fmt-btn-wide { width: auto; padding: 0 10px; }
+.fmt-btn-bold { font-weight: 700; }
+.fmt-btn-underline { text-decoration: underline; }
+.fmt-label { display: inline-block; min-width: 34px; font-size: 12.5px; color: #31333f; text-align: center; }
+.fmt-btn-kenten { letter-spacing: -1px; }   /* 「傍点」2文字がボタン内でやや間延びして見えるため少し詰める */
+
+/* 傍点（強調の圏点）。execCommandに対応が無い書式のため独自のspan(.kenten)に持たせ、
+   画面(#doc)・印刷(#printDoc)の両方に同じルールを当てる（印刷側の複製はbuildPrintNode参照）。
+   横書きなので文字の上に付ける（over）。プレフィックス無しのtext-emphasis-*はChromeで対応済みだが、
+   -webkit-プレフィックス版も念のため一緒に指定しておく。 */
+.kenten {
+  -webkit-text-emphasis-style: filled dot; -webkit-text-emphasis-position: over right;
+  text-emphasis-style: filled dot; text-emphasis-position: over right;
+}
+
+/* タイトル欄はツールバーから独立させ、全幅の1行ボックスにする（テキストの主役として目立たせる）。
+   .app-frame/.toolbar-stickyと同じ900px中央寄せを、ここでも個別に指定する
+   （.app-frameの外に出た関係で、自動では揃わなくなったため）。 */
+.title-row { max-width: 900px; margin: 4px auto 0; }
+.title-row input[type="text"] {
+  width: 100%; height: 44px; padding: 0 14px; border-radius: 8px; border: 1px solid #e2e4e9;
+  font-size: 14px; font-family: inherit; background: #fff; color: #31333f;
+}
+.title-row input[type="text"]:focus { outline: none; border-color: #ff4b4b; }
+#saveStatus { max-width: 900px; margin: 8px auto 0; font-size: 12.5px; color: #666; min-height: 1.4em; }
+
+/* ── 「設定」「各種ボタンのヘルプ」のドロップダウンパネル ──
+   note-popoverと同じ考え方（枠線ではなく影だけで境界を示す）を踏襲。 */
+.dropdown-panel {
+  position: absolute; z-index: 55; width: 280px; background: #fff; border: none;
+  border-radius: 10px; box-shadow: 0 4px 18px rgba(0,0,0,.18); padding: 14px 16px;
+  font-size: 13px; line-height: 1.7; color: #444;
+}
+.dropdown-panel ul { margin: 0; padding-left: 18px; }
+.dropdown-panel li { margin-bottom: 8px; }
+.dropdown-panel li:last-child { margin-bottom: 0; }
+.settings-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.settings-row:last-child { margin-bottom: 0; }
+.settings-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.settings-dot[data-color="black"] { background: #31333f; }
+.settings-dot[data-color="blue"] { background: #1a73e8; }
+.settings-dot[data-color="red"] { background: #d33; }
+.settings-row input[type="text"] {
+  flex: 1 1 auto; font-size: 13px; padding: 6px 8px; border-radius: 6px; border: 1px solid #e2e4e9;
+  font-family: inherit; color: #31333f;
+}
+.settings-row input[type="text"]:focus { outline: none; border-color: #ff4b4b; }
+.settings-fixed { font-size: 12.5px; color: #8a8f98; }
+/* 罫線ではなく余白だけで区切る（色の名前設定と、表示のオンオフ設定の間）。 */
+.settings-toggle {
+  display: flex; align-items: center; gap: 8px; margin-top: 14px;
+  font-size: 12.5px; color: #31333f; cursor: pointer;
+}
+.settings-toggle input { flex: none; }
+
+/* ── ヘルプアイコン（Streamlitのhelp=に相当・現在は未使用だが今後の説明表示用に残す）──
+   標準のtitle属性は「どこにカーソルを置けば説明が出るか」が画面から分からず見落とされやすいため、
+   説明の存在が見える小さい「?」を置き、吹き出しは枠線を使わず影だけで境界を示す（好みに合わせる）。 */
+.help-wrap { position: relative; display: inline-flex; vertical-align: middle; }
+.help-icon {
+  width: 15px; height: 15px; border-radius: 50%; border: none; background: #e2e4e9; color: #6b6f76;
+  font-size: 10px; line-height: 1; cursor: help; padding: 0; display: inline-flex; align-items: center; justify-content: center;
+}
+.help-icon:hover, .help-icon:focus { background: #ff4b4b; color: #fff; outline: none; }
+.help-tip {
+  position: absolute; z-index: 60; top: calc(100% + 6px); left: 0; width: max-content; max-width: 240px;
+  background: #31333f; color: #fff; font-size: 12px; line-height: 1.6; padding: 8px 10px; border-radius: 8px;
+  /* 枠線・影とも付けない（濃い背景色とのコントラストだけで浮いて見せる）。 */
+  opacity: 0; visibility: hidden; transition: opacity .12s; pointer-events: none;
+}
+.help-icon:hover + .help-tip, .help-icon:focus + .help-tip { opacity: 1; visibility: visible; }
+
+.doc-wrap { display: flex; gap: 28px; max-width: 900px; margin: 0 auto; }
+.doc-left { flex: 1 1 auto; min-width: 0; position: relative; }   /* 段落ホバー時のアイコン(.para-hover)の位置基準 */
+/* テキスト・スクショどちらも入れられる欄だと一目で分かるよう、枠の上に小さく添える
+   （枠が空の間だけ出るplaceholderと違い、入力後もずっと表示され続けるラベル）。 */
+.doc-label { font-size: 12.5px; color: #8a8f98; margin: 0 0 6px; }
+.doc-right {
+  width: 260px; flex: none; position: relative;   /* 区切りは罫線ではなくgap（余白）だけに任せる */
+}
+
+/* #docと見本(#docSample)を同じマス目に重ねて表示する（絶対座標の手計算をせずに済むCSS Gridの技）。 */
+.doc-stack { display: grid; }
+.doc-stack > * { grid-area: 1 / 1; }
+
+#doc {
+  border: 1px solid #e2e4e9; border-radius: 8px; padding: 20px;
+  font-size: 15px; line-height: 1.9; min-height: 300px;
+}
+#doc:focus { outline: none; border-color: #ff4b4b; }
+/* 本文が空の間だけ、それらしい例文をグレーで重ねて見せる（#docのJS側で.emptyを付け外しする）。
+   クリックは下の#docへ素通しし、実際に何か入力・貼り付けした瞬間にJS側で消える。 */
+#docSample {
+  display: none; padding: 20px; font-size: 15px; line-height: 1.9;
+  color: #b7bac2; pointer-events: none;
+}
+#doc.empty ~ #docSample { display: block; }
+.para { margin: 0; }   /* テキスト段落＝1行。インデント／ぶら下げインデントはこの要素にpadding-left/text-indentで適用する */
+/* 本文の1行を常時37字以内にする。CJKフォントは全角1文字がほぼ1em幅で設計されているため、
+   max-width:37emで近似する（画像ブロックは対象外＝.para-imageを除外）。
+   インデントのpadding-leftもこの37emの内側に含まれるので、字下げした行はその分だけ実質の文字数が減る
+   （＝実際の文書と同じ見え方になる）。半角英数字が混じる行は厳密には37字ちょうどにならない場合がある。 */
+.para:not(.para-image) { max-width: 37em; }
+
+.note-anchor { cursor: default; }   /* ハイライト（マーキング）は無し。注釈の目印は先頭の番号だけ */
+.note-num {
+  font-size: .65em; font-weight: 700; margin-right: 2px; color: #ff4b4b; vertical-align: super;
+  user-select: none;
+}
+
+/* ── 段落ホバー時の「＋画像」「×削除」（JIMDO的なブロック単位の操作） ──
+   #docの外側の要素なので、位置は.doc-left基準の絶対座標（JSがtopだけ合わせる）。
+   横位置は.doc-rightとの間の余白(28px)に収まるよう、.doc-leftのすぐ右に固定で置く。
+   paddingを付けて当たり判定を見た目より広めに取り、段落からここまでマウスを動かす途中で
+   多少ズレても入り直せるようにする（2026-08-19、クリックしづらいとの指摘を受けて調整）。 */
+.para-hover {
+  position: absolute; left: 100%; margin-left: 4px; top: 0; padding: 4px;
+  display: flex; flex-direction: column; gap: 4px; z-index: 15;
+}
+/* [hidden]とdisplay:flexが同じ詳細度になり、後勝ちでflexが表示してしまうのを防ぐ
+   （[hidden]側の詳細度を明示的に上げて、hidden属性がある間は必ず隠す）。 */
+.para-hover[hidden] { display: none; }
+.para-hover-btn {
+  width: 28px; height: 28px; padding: 0; border: none; border-radius: 7px;
+  background: #eef0f3; color: #31333f; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.para-hover-btn:hover { background: #e2e4e9; color: #ff4b4b; }
+.para-hover-btn .icon { width: 14px; height: 14px; }
+.para-hover input[type="file"] { display: none; }
+
+/* ── 画像段落（スクショ） ──
+   罫線ではなく淡い背景で「1つのブロック」を示す（罫線を多用しない、という見た目の方針を画像でも踏襲）。 */
+.para-image { margin: 16px 0; padding: 12px; border-radius: 10px; background: #f7f7f9; }
+.para-image-inner { display: flex; flex-direction: column; gap: 8px; }
+.para-image-img { max-width: 100%; display: block; border-radius: 6px; }
+.para-image-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.para-image-note-btn {
+  font-size: 12.5px; padding: 5px 10px; border-radius: 6px; border: none;
+  background: #eef0f3; color: #31333f; cursor: pointer;
+}
+.para-image-note-btn:hover { background: #e2e4e9; color: #ff4b4b; }
+/* 削除ボタンは丸アイコンにして「＋ノート」（テキストボタン）と見た目で区別する。 */
+.para-image-del-btn {
+  width: 26px; height: 26px; padding: 0; border: none; border-radius: 50%;
+  background: #eef0f3; color: #31333f; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.para-image-del-btn:hover { background: #e2e4e9; color: #ff4b4b; }
+.para-image-del-btn .icon { width: 12px; height: 12px; }
+/* コメントが無い間は高さゼロ（min-heightを持たせない）で余白を作らない。バッジが付いたら:not(:empty)で
+   余白を確保する（画像との間の隙間）。 */
+.para-image-notes:not(:empty) { display: flex; gap: 6px; margin-bottom: 4px; }
+
+/* 1つの注釈対象（一文・画像）に複数のコメント（自分・共有相手の返信）が並ぶことがあるため、
+   カード全体で1つの通し番号を持ち、その中に複数行（.sidenote-entry）を積む構成にする。 */
+.sidenote-card {
+  position: absolute; left: 20px; right: 0; font-size: 13px; line-height: 1.7; color: #444;
+}
+.sidenote-num { color: #6b6f76; font-weight: 700; margin-right: 4px; }   /* 番号は無彩色に統一（赤は「重要」専用の色にするため） */
+.sidenote-entry { display: flex; align-items: flex-start; gap: 4px; margin-top: 2px; }
+.sidenote-entry:first-of-type { margin-top: 0; }
+.sidenote-text { white-space: pre-line; flex: 1 1 auto; }   /* ノート本文の改行(\n)を保持する（太字の見出し行→本文、のような2行構成のため） */
+.sidenote-text strong { color: inherit; }
+.sidenote-rm {
+  display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; flex: none;
+  border: none; background: none; color: #b7bac2; cursor: pointer; padding: 0; margin-left: 4px;
+}
+.sidenote-rm:hover { color: #ff4b4b; }
+.sidenote-rm .icon { width: 10px; height: 10px; }
+.sidenote-reply-btn {
+  display: block; font-size: 11.5px; padding: 3px 0; margin-top: 4px; border: none; background: none;
+  color: #8a8f98; cursor: pointer;
+}
+.sidenote-reply-btn:hover { color: #ff4b4b; }
+
+/* 注釈が1件も無い間だけ出す、使い方のグレーアウトの見本（実際のノートを1件付けると消える）。 */
+.sidenote-sample { color: #b7bac2; pointer-events: none; }
+.sidenote-sample .sidenote-num { color: #c7cad0; }
+
+.note-popover {
+  /* 本文の上に浮くパネルなので、境界は枠線でなく影だけで示す（存在に気づけるよう影は残す）。 */
+  position: absolute; z-index: 50; width: 260px; background: #fff; border: none;
+  border-radius: 10px; box-shadow: 0 4px 18px rgba(0,0,0,.18); padding: 10px;
+}
+/* 「自分／共有相手／重要」の3色から選ぶ。選択色はドット(::before)で示し、選択中はグレー地で強調する。 */
+.color-picker { display: flex; gap: 6px; margin-bottom: 8px; }
+.color-swatch {
+  flex: 1 1 0; display: flex; align-items: center; justify-content: center; gap: 4px;
+  font-size: 11.5px; padding: 5px 4px; border-radius: 6px; border: none;
+  background: #f5f6f8; color: #8a8f98; cursor: pointer;
+}
+.color-swatch::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; }
+.color-swatch[data-color="black"] { color: #31333f; }
+.color-swatch[data-color="blue"] { color: #1a73e8; }
+.color-swatch[data-color="red"] { color: #d33; }
+.color-swatch.selected { background: #e2e4e9; font-weight: 600; }
+.note-popover textarea {
+  width: 100%; font-size: 13px; font-family: inherit; border: 1px solid #e2e4e9; border-radius: 6px;
+  padding: 8px; resize: vertical;
+}
+.note-popover textarea:focus { outline: none; border-color: #ff4b4b; }
+.note-popover .phint { font-size: 11px; color: #8a8f98; margin-top: 4px; }
+.note-popover .row { display: flex; gap: 8px; margin-top: 8px; }
+.note-popover button {
+  flex: 1 1 0; font-size: 13px; padding: 7px; border-radius: 6px; border: none;
+  background: #eef0f3; color: #31333f; cursor: pointer;
+}
+.note-popover button:not(.primary):hover { background: #e2e4e9; color: #ff4b4b; }
+.note-popover button.primary { background: #ff4b4b; color: #fff; font-weight: 600; }
+
+@media (max-width: 860px) {
+  .doc-wrap { flex-direction: column; }
+  .doc-right { display: none; }   /* スマホ幅ではサイドノート欄自体を非表示にする（横並びの余白が無いため） */
+  /* .doc-rightとの間の余白が無くなる幅なので、.para-hoverは外側ではなく#docの内側右端に置く。 */
+  .para-hover { left: auto; right: 4px; margin-left: 0; }
+}
+
+/* ── 印刷（PDF保存）専用の版面 ──
+   画面のサイドノートはJSで実測した絶対座標で配置しているが、印刷はページをまたぐため使えない。
+   代わりにJupyter Book（sphinx-book-theme）と同じ「float」方式にする：
+   段落はfloat:leftで固定幅の左カラムに、注釈(aside)はfloat:rightで右カラムに、
+   隣り合う兄弟要素として並べる（asideを段落の中に入れない＝段落の最大幅に押し込められて
+   独立したカラムにならないため）。段落側はclear:leftで必ず新しい行から始める。 */
+#printDoc { display: none; }
+
+@page {
+  size: A4;
+  margin: 20mm;
+}
+
+/* 以前は@media printでこのブロックを囲っていたが、body.print-activeクラスの有無で判定する方式に
+   変更した。理由：window.print()はOSネイティブの印刷ダイアログを開くため、印刷レイアウトの実際の
+   描画をブラウザ自動化ツール（devtools相当）から確認できない。クラス方式にすれば、
+   document.body.classList.add("print-active")するだけで画面上にそのまま印刷版面が表示され、
+   window.print()を呼ばなくても実機の描画（floatの挙動含む）を確認できる。実際の印刷時も
+   savePdfBtn.onclick内で同じクラスを付けてからwindow.print()を呼ぶため、プレビューと本番の
+   見た目は完全に一致する（ルールを2重管理する必要がない）。 */
+body.print-active { padding: 0; margin: 0; }
+body.print-active .app-frame, body.print-active .toolbar-sticky, body.print-active .title-row,
+body.print-active #saveStatus, body.print-active .doc-wrap, body.print-active .note-popover,
+body.print-active .dropdown-panel { display: none !important; }
+body.print-active #printDoc {
+  display: block !important;
+  font-family: "Source Sans Pro", system-ui, "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+  font-size: 10.5pt; line-height: 1.9; color: #000;
+}
+body.print-active #printDoc::after { content: ""; display: block; clear: both; }
+body.print-active .print-title { font-size: 14pt; font-weight: 700; margin: 0 0 16pt; clear: both; }
+/* 段落はfloatさせず、幅115mmの通常のブロックとして縦に積む（＝本文は自然な折り返し以外では
+   絶対に改行されない）。サイドノートは段落の中に対応する一文の直後としてインラインで埋め込み
+   （buildPrintNode参照）、.print-asideのfloat:right＋マイナスマージンで段落の右の余白へ逃がす
+   （Tufte CSSとして知られる余白注釈の定番手法）。
+   2026-08-19：以前は「段落を注釈の位置で複数の<p>に分割する」方式だった。分割した<p>同士は
+   同じ幅のfloat:leftになり横に並ぶ余地が無いため、注釈の直後で必ず改行されたように見える
+   不具合になっていた。段落を分割しない今の方式なら、この問題は原理的に起きない。
+   marginは持たせない：画面側の#doc .para（margin:0、余白は空行の段落の高さだけで表現する）と
+   段落間の余白の作り方を揃えるため。marginを足すと、貼り付け元の改行がそのまま複数の.paraに
+   割れているケース（コピー元で1行ごとに改行が入っていた等）で、段落の数だけ余白が積み重なって
+   画面よりPDFの方が段落間が広く見える不具合になっていた。
+   clearは意図的に付けない：.print-paraは新しいブロック整形コンテキストを作らないため、
+   .print-asideを子に持つ.print-paraにclearを付けると、そのasideが（マイナスマージンで
+   はみ出しているにもかかわらず）「まだ隣にfloatが残っている」扱いになり、次の段落がその
+   asideの下まで律儀に待ってしまう（＝段落の長い注釈のぶんだけ余白が空いて見える、
+   2026-08-19に複数回報告された不具合の本当の原因はこれだった。前回この段落自体のclearは
+   残したまま::afterのクリアフィックスだけ外したが、それでは直っていなかった）。
+   画像(.print-img、floatのまま)の直後に段落が来ても、画像と段落は同じ幅(115mm)で横に並ぶ
+   余地が無いため、clearが無くても段落は自然に画像の下から始まる（下記テストで確認）。 */
+body.print-active .print-para {
+  width: 115mm; margin: 0;
+  overflow-wrap: break-word;
+}
+/* あえてclearfix（floatの子=.print-asideの高さを親に含める処理）は入れない。入れると、注釈が
+   その段落の本文より長い時、次の段落がその注釈の下まで律儀に空けて始まってしまい、段落ごとの
+   余白が不揃いに広がって見える（2026-08-19に報告あり）。本文（幅115mm）と注釈（幅48mm、外側の
+   余白へマイナスマージンで逃げている）は横位置が重ならないため、本文同士がぶつかることは無い。
+   残るリスクは「ある段落の長い注釈がまだ表示され続けている間に、次の段落の注釈がごく早い位置
+   （その段落の先頭付近）に来る」場合に注釈同士が重なる可能性があるが、これは比較的まれなケース
+   として許容する（滅多に起きない不具合より、常に発生する不要な余白の解消を優先）。 */
+body.print-active .print-img { width: 115mm; max-width: 115mm; float: left; clear: both; margin: 0 0 10pt; display: block; }
+body.print-active .print-aside {
+  width: 48mm; float: right; clear: right; margin: 0 0 8pt; font-size: 8.5pt; line-height: 1.6; color: #333;
+}
+/* 段落の中にインラインで埋め込まれた場合だけ、段落自身の右の余白（外）へ逃がす。画像の直後に
+   段落の外（#printDocの直接の子）として置かれる場合（画像への注釈）は今まで通りfloat:rightのみ。 */
+body.print-active .print-para .print-aside { margin-right: -48mm; }
+body.print-active #printDoc sup { font-size: .75em; color: #666; }
