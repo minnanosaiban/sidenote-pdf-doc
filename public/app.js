@@ -39,9 +39,7 @@ const hangingLabel = document.getElementById("hangingLabel");
 const boldBtn = document.getElementById("boldBtn");
 const underlineBtn = document.getElementById("underlineBtn");
 const kentenBtn = document.getElementById("kentenBtn");
-const fontDecBtn = document.getElementById("fontDecBtn");
-const fontIncBtn = document.getElementById("fontIncBtn");
-const fontLevelLabel = document.getElementById("fontLevelLabel");
+const styleBtns = Array.from(formatToolbarEl.querySelectorAll("[data-style]"));
 const docStackEl = document.getElementById("docStack");
 const docLabelEl = document.getElementById("docLabel");
 const pdfViewerEl = document.getElementById("pdfViewer");
@@ -85,18 +83,21 @@ function colorLabel(color) {
 // この端末の個人的な表示設定として扱い、.jsonへは保存しない（md書き出しには名前を常に含める＝別扱い）。
 let showAuthorLabel = false;
 
-// インデント／ぶら下げインデント／文字サイズは.paraのdata属性（data-indent-level・data-hanging・
-// data-font-level）で持たせ、画面・印刷（PDF化）の両方がこの属性から表示用のスタイルを組み立てる
+// インデント／ぶら下げインデント／スタイルは.paraのdata属性（data-indent-level・data-hanging・
+// data-style）で持たせ、画面・印刷（PDF化）の両方がこの属性から表示用のスタイルを組み立てる
 // （値そのものは属性が正、スタイルは都度の計算結果というのが唯一の情報源になる）。
 const INDENT_STEP_EM = 1;
 const INDENT_LEVEL_MAX = 6;
 // ぶら下げは1〜3文字幅から選べる（0＝なし）。1文字＝1em（本文の37字組版と同じ「全角1文字≒1em」の前提）。
 const HANGING_CHAR_EM = 1;
 const HANGING_MAX = 3;
-// 文字サイズは1段階＝10%刻みにして、画面のfmt-labelにそのまま「70%〜150%」ときりのいい数字で出せるようにする。
-const FONT_STEP_EM = 0.1;
-const FONT_LEVEL_MIN = -3;
-const FONT_LEVEL_MAX = 5;
+// スタイルは「本文」＋見出し3段階（H1〜H3）の離散的な4択（かつての70%〜150%の連続ステッパー式
+// 文字サイズは廃止）。data-styleが無い＝本文（フォントサイズ・太さともに素のまま）。
+const PARA_STYLE_LOOKS = {
+  h1: { fontSize: "1.3em", fontWeight: "700" },
+  h2: { fontSize: "1.15em", fontWeight: "700" },
+  h3: { fontSize: "1em", fontWeight: "700" },
+};
 
 const debounce = (fn, ms) => {
   let t;
@@ -244,7 +245,7 @@ function applyProjectData(data) {
   titleInput.value = data.title || "";
   // innerHTMLの再代入で.para-imageのボタン等のイベントリスナーは失われるため、必ず再バインドする。
   doc.querySelectorAll(".para-image").forEach(bindImageParaEvents);
-  // 配置・インデント・ぶら下げ・文字サイズはdocHTMLに焼き込まれたインラインstyleでそのまま復元されるが、
+  // 配置・インデント・ぶら下げ・スタイルはdocHTMLに焼き込まれたインラインstyleでそのまま復元されるが、
   // 旧バージョン・手編集されたファイル等でdata属性だけがありstyleが伴わない場合に備え、念のため再計算する。
   applyParaStyles(Array.from(doc.querySelectorAll(".para:not(.para-image)")));
   renumberAndLayout();
@@ -362,10 +363,10 @@ function buildPrintPara(paraEl) {
     p.style.paddingLeft = `${base + hangingChars * HANGING_CHAR_EM}em`;
     p.style.textIndent = hangingChars > 0 ? `-${hangingChars * HANGING_CHAR_EM}em` : "0";
   }
-  // 配置・文字サイズも画面（#doc）側の書式ツールバーで付けたdata属性をそのまま踏襲する。
+  // 配置・スタイルも画面（#doc）側の書式ツールバーで付けたdata属性をそのまま踏襲する。
   if (paraEl.dataset.align) p.style.textAlign = paraEl.dataset.align;
-  const fontLevel = Number(paraEl.dataset.fontLevel || 0);
-  if (fontLevel) p.style.fontSize = `${1 + fontLevel * FONT_STEP_EM}em`;
+  const styleLook = PARA_STYLE_LOOKS[paraEl.dataset.style];
+  if (styleLook) { p.style.fontSize = styleLook.fontSize; p.style.fontWeight = styleLook.fontWeight; }
   Array.from(paraEl.childNodes).forEach((n) => p.appendChild(buildPrintNode(n)));
   return p;
 }
@@ -1000,11 +1001,11 @@ function deletePara(para) {
     para.className = "para";
     para.removeAttribute("data-para-id");
     para.removeAttribute("contenteditable");   // .para-imageで付けたcontentEditable="false"を解除
-    para.removeAttribute("style");   // 配置・インデント・ぶら下げ・文字サイズの見た目もリセットする
+    para.removeAttribute("style");   // 配置・インデント・ぶら下げ・スタイルの見た目もリセットする
     delete para.dataset.indentLevel;
     delete para.dataset.hanging;
     delete para.dataset.align;
-    delete para.dataset.fontLevel;
+    delete para.dataset.style;
     para.innerHTML = "<br>";
   } else {
     para.remove();
@@ -1049,7 +1050,7 @@ function insertNewParagraph() {
   const range = sel.getRangeAt(0);
   if (!doc.contains(range.commonAncestorContainer)) return;
   if (rangeOverlapsLockedAnchor(range)) return;
-  const currentPara = getCurrentPara();   // Enter前の段落。配置・インデント・ぶら下げ・文字サイズを引き継ぐために控えておく
+  const currentPara = getCurrentPara();   // Enter前の段落。配置・インデント・ぶら下げ・スタイルを引き継ぐために控えておく
 
   // 挿入した.paraを一時属性で目印してすぐ拾い、カーソルをその中（brの手前＝空行の先頭）に置く。
   document.execCommand("insertHTML", false, '<div class="para" data-new-para="1"><br></div>');
@@ -1065,8 +1066,8 @@ function insertNewParagraph() {
   sel.addRange(r);
 }
 
-// ---- 本文（#doc）の書式ツールバー：配置／インデント／ぶら下げ／太字下線／傍点／文字サイズ ----
-// 配置・インデント・ぶら下げ・文字サイズは「段落」の属性として扱う（カーソルのある1段落、
+// ---- 本文（#doc）の書式ツールバー：配置／インデント／ぶら下げ／太字下線／傍点／スタイル ----
+// 配置・インデント・ぶら下げ・スタイルは「段落」の属性として扱う（カーソルのある1段落、
 // または選択範囲が複数段落にまたがる場合はその全段落）。太字・下線・傍点だけは選択した文字への
 // 適用にする。画像ブロックはテキストの書式という性質上、対象から外す。
 // 段落pの内容が選択範囲rangeと実際に重なっているか（両端が触れているだけ＝実際には0文字の
@@ -1112,16 +1113,17 @@ function applyParaStyles(paras) {
       p.style.textIndent = "";
     }
     p.style.textAlign = p.dataset.align || "";
-    const fontLevel = Number(p.dataset.fontLevel || 0);
-    p.style.fontSize = fontLevel ? `${1 + fontLevel * FONT_STEP_EM}em` : "";
+    const styleLook = PARA_STYLE_LOOKS[p.dataset.style];
+    if (styleLook) { p.style.fontSize = styleLook.fontSize; p.style.fontWeight = styleLook.fontWeight; }
+    else { p.style.fontSize = ""; p.style.fontWeight = ""; }
   });
 }
 
-// Enterで段落を分けた直後は、直前の段落の配置・インデント・ぶら下げ・文字サイズを引き継ぐ
+// Enterで段落を分けた直後は、直前の段落の配置・インデント・ぶら下げ・スタイルを引き継ぐ
 // （準備書面等の番号付き項目を続けて書く時、行ごとに書式を付け直さずに済むようにするため）。
 // 太字・下線は文字への書式なので対象外（新しい行の頭は素の状態から始まる）。
 function inheritParaFormat(fromPara, toPara) {
-  ["indentLevel", "hanging", "align", "fontLevel"].forEach((key) => {
+  ["indentLevel", "hanging", "align", "style"].forEach((key) => {
     if (fromPara.dataset[key] !== undefined) toPara.dataset[key] = fromPara.dataset[key];
   });
   applyParaStyles([toPara]);
@@ -1151,7 +1153,7 @@ function applyIndentStep(delta) {
 indentDecBtn.onclick = () => applyIndentStep(-1);
 indentIncBtn.onclick = () => applyIndentStep(1);
 
-// ぶら下げは0（なし）〜3文字の幅から選ぶ（インデント・文字サイズと同じ−／＋のステッパー式）。
+// ぶら下げは0（なし）〜3文字の幅から選ぶ（インデントと同じ−／＋のステッパー式）。
 function applyHangingStep(delta) {
   const paras = getTargetParas();
   if (!paras.length) return;
@@ -1166,19 +1168,16 @@ function applyHangingStep(delta) {
 hangingDecBtn.onclick = () => applyHangingStep(-1);
 hangingIncBtn.onclick = () => applyHangingStep(1);
 
-function applyFontStep(delta) {
+// スタイルは「本文」（data-style無し）とH1〜H3の排他選択（配置と同じ考え方）。
+function applyStyle(styleKey) {
   const paras = getTargetParas();
   if (!paras.length) return;
-  paras.forEach((p) => {
-    const level = Math.max(FONT_LEVEL_MIN, Math.min(FONT_LEVEL_MAX, Number(p.dataset.fontLevel || 0) + delta));
-    if (level === 0) delete p.dataset.fontLevel; else p.dataset.fontLevel = String(level);
-  });
+  paras.forEach((p) => { if (!styleKey) delete p.dataset.style; else p.dataset.style = styleKey; });
   applyParaStyles(paras);
   updateFormatToolbarState();
   autoSaveDebounced();
 }
-fontDecBtn.onclick = () => applyFontStep(-1);
-fontIncBtn.onclick = () => applyFontStep(1);
+styleBtns.forEach((btn) => { btn.onclick = () => applyStyle(btn.dataset.style); });
 
 // 太字・下線は選択した文字へ（execCommand経由＝Ctrl+Zのundo対象にもなる）。
 // 選択が折りたたまれている（カーソルだけ）場合はブラウザ標準の挙動として、以後タイプする文字に適用される。
@@ -1245,8 +1244,8 @@ formatToolbarEl.addEventListener("mousedown", (e) => {
   if (e.target.closest("button")) e.preventDefault();
 });
 
-// 現在のカーソル位置（または選択）に応じて、ツールバーの状態（選択中の配置・ぶら下げの強調表示、
-// インデント・文字サイズの上下限での無効化、文字サイズの表示、太字・下線の強調表示）を更新する。
+// 現在のカーソル位置（または選択）に応じて、ツールバーの状態（選択中の配置・ぶら下げ・スタイルの
+// 強調表示、インデントの上下限での無効化、太字・下線の強調表示）を更新する。
 function updateFormatToolbarState() {
   const paras = getTargetParas();
   const p = paras[0] || null;
@@ -1263,10 +1262,8 @@ function updateFormatToolbarState() {
   indentDecBtn.disabled = !p || indentLevel <= 0;
   indentIncBtn.disabled = !p || indentLevel >= INDENT_LEVEL_MAX;
 
-  const fontLevel = p ? Number(p.dataset.fontLevel || 0) : 0;
-  fontLevelLabel.textContent = `${Math.round((1 + fontLevel * FONT_STEP_EM) * 100)}%`;
-  fontDecBtn.disabled = !p || fontLevel <= FONT_LEVEL_MIN;
-  fontIncBtn.disabled = !p || fontLevel >= FONT_LEVEL_MAX;
+  const styleKey = p ? (p.dataset.style || "") : "";
+  styleBtns.forEach((btn) => btn.classList.toggle("active", !!p && (btn.dataset.style || "") === styleKey));
 
   let boldActive = false, underlineActive = false;
   try {

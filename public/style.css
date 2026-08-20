@@ -41,7 +41,7 @@ body {
 .toolbar .filebtn2 input { display: none; }
 .toolbar .sep { width: 1px; height: 22px; background: #e2e4e9; margin: 0 2px; }
 
-/* ── 本文の書式ツールバー（配置／インデント／ぶら下げ／太字下線／文字サイズ） ──
+/* ── 本文の書式ツールバー（配置／インデント／ぶら下げ／太字下線／スタイル） ──
    ファイル操作の.toolbarとは幅・並びの性格が違う（ラベルの長さがバラバラ）ため、
    固定幅118pxは踏襲せず、ボタンごとに中身の幅に合わせる。 */
 .toolbar-format { row-gap: 6px; }
@@ -57,11 +57,18 @@ body {
   font-size: 13px; height: 28px; min-width: 28px; padding: 0 8px; border-radius: 6px; border: none;
   background: #eef0f3; color: #31333f; cursor: pointer;
 }
+/* #formatToolbarは.toolbarも併せ持つため、そちらの固定幅118px・高さ34px（.toolbar button）が
+   同じ詳細度の.fmt-btnより後勝ちで効いてしまい、上のheight/min-widthが無視されていた
+   （実機で確認：全ボタンが118px幅の丸ボタンになっていた）。クラス2つ分の詳細度で明示的に打ち消す。 */
+.toolbar-format .fmt-btn { width: auto; height: 28px; }
 .fmt-btn:hover { background: #e2e4e9; color: #ff4b4b; }
 .fmt-btn:disabled { background: #f5f6f8; color: #b7bac2; cursor: not-allowed; }
 /* 選択中／適用中の状態は色を反転させて示す（note-popover .primaryと同じ赤地・白文字）。 */
 .fmt-btn.active { background: #ff4b4b; color: #fff; }
 .fmt-btn-wide { width: auto; padding: 0 10px; }
+/* 配置／インデント／ぶら下げ／スタイルは、ラベルの字数（「左」1字〜「本文」2字）に関わらず
+   全角2文字分の幅で揃える（列内でボタンの大きさがバラつかないようにするため）。 */
+.fmt-btn-2ch { min-width: 40px; }
 .fmt-btn-bold { font-weight: 700; }
 .fmt-btn-underline { text-decoration: underline; }
 .fmt-label { display: inline-block; min-width: 34px; font-size: 12.5px; color: #31333f; text-align: center; }

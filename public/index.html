@@ -18,7 +18,7 @@
 <meta name="twitter:description" content="文章やスクショにサイドノートを書き込んでPDFにできるアプリ">
 <meta name="twitter:image" content="https://sidenote-pdf-doc.pages.dev/og-image-large.png">
 <!-- ?v=NUM はキャッシュ対策。style.css/app.jsを直す度に、直したファイルの番号だけ+1する。 -->
-<link rel="stylesheet" href="style.css?v=30">
+<link rel="stylesheet" href="style.css?v=32">
 </head>
 <body>
 
@@ -71,7 +71,7 @@
   </button>
 </div>
 
-<!-- 本文（左カラム）の書式ツールバー。配置・インデント・文字サイズはカーソルのある段落
+<!-- 本文（左カラム）の書式ツールバー。配置・インデント・ぶら下げ・スタイルはカーソルのある段落
      （複数段落にまたがる選択時はその全段落）へ、太字・下線は選択範囲の文字へ適用する。
      ボタンは.toolbar-format側のmousedownでpreventDefaultし、クリックしても#docの
      フォーカス・選択範囲を失わないようにする（失うとどの段落・範囲に適用すべきか分からなくなるため）。 -->
@@ -79,26 +79,26 @@
   <span class="fmt-unit">
     <span class="fmt-group-label">配置</span>
     <span class="fmt-group">
-      <button type="button" class="fmt-btn" data-align="left" title="左揃え">左</button>
-      <button type="button" class="fmt-btn" data-align="center" title="中央揃え">中</button>
-      <button type="button" class="fmt-btn" data-align="right" title="右揃え">右</button>
+      <button type="button" class="fmt-btn fmt-btn-2ch" data-align="left" title="左揃え">左</button>
+      <button type="button" class="fmt-btn fmt-btn-2ch" data-align="center" title="中央揃え">中</button>
+      <button type="button" class="fmt-btn fmt-btn-2ch" data-align="right" title="右揃え">右</button>
     </span>
   </span>
   <span class="sep"></span>
   <span class="fmt-unit">
     <span class="fmt-group-label">インデント</span>
     <span class="fmt-group">
-      <button type="button" class="fmt-btn" id="indentDecBtn" title="インデントを減らす">−</button>
-      <button type="button" class="fmt-btn" id="indentIncBtn" title="インデントを増やす">＋</button>
+      <button type="button" class="fmt-btn fmt-btn-2ch" id="indentDecBtn" title="インデントを減らす">−</button>
+      <button type="button" class="fmt-btn fmt-btn-2ch" id="indentIncBtn" title="インデントを増やす">＋</button>
     </span>
   </span>
   <span class="sep"></span>
   <span class="fmt-unit">
     <span class="fmt-group-label">ぶら下げ</span>
     <span class="fmt-group">
-      <button type="button" class="fmt-btn" id="hangingDecBtn" title="ぶら下げの幅を減らす">−</button>
+      <button type="button" class="fmt-btn fmt-btn-2ch" id="hangingDecBtn" title="ぶら下げの幅を減らす">−</button>
       <span class="fmt-label" id="hangingLabel">オフ</span>
-      <button type="button" class="fmt-btn" id="hangingIncBtn" title="ぶら下げの幅を増やす（1〜3字。2行目以降だけを字下げします。番号付き項目の折り返しに）">＋</button>
+      <button type="button" class="fmt-btn fmt-btn-2ch" id="hangingIncBtn" title="ぶら下げの幅を増やす（1〜3字。2行目以降だけを字下げします。番号付き項目の折り返しに）">＋</button>
     </span>
   </span>
   <span class="sep"></span>
@@ -109,11 +109,12 @@
   </span>
   <span class="sep"></span>
   <span class="fmt-unit">
-    <span class="fmt-group-label">文字サイズ</span>
+    <span class="fmt-group-label">スタイル</span>
     <span class="fmt-group">
-      <button type="button" class="fmt-btn" id="fontDecBtn" title="文字を小さくする">－</button>
-      <span class="fmt-label" id="fontLevelLabel">100%</span>
-      <button type="button" class="fmt-btn" id="fontIncBtn" title="文字を大きくする">＋</button>
+      <button type="button" class="fmt-btn fmt-btn-2ch" data-style="" title="本文（見出しを解除）">本文</button>
+      <button type="button" class="fmt-btn fmt-btn-2ch" data-style="h1" title="見出し1">H1</button>
+      <button type="button" class="fmt-btn fmt-btn-2ch" data-style="h2" title="見出し2">H2</button>
+      <button type="button" class="fmt-btn fmt-btn-2ch" data-style="h3" title="見出し3">H3</button>
     </span>
   </span>
 </div>
@@ -150,7 +151,7 @@
   </label>
   <ul>
     <li>段落にカーソルを乗せると、右側に「＋画像」「×削除」のアイコンが出ます。「＋画像」はその段落の直後に画像を挿入、「×削除」はその段落（画像の場合はその1枚）だけを消します。</li>
-    <li>本文用の書式ツールバー：配置・インデント・ぶら下げ（1〜3字）・文字サイズはカーソルのある段落（複数段落を選択した場合はその全段落）に、太字・下線・傍点は選択した文字に適用されます。傍点は範囲選択が必須で、同じ範囲をもう一度選んで押すと解除できます。Enterで段落を分けた直後は、直前の段落と同じ配置・インデント・ぶら下げ・文字サイズを引き継ぎます。</li>
+    <li>本文用の書式ツールバー：配置・インデント・ぶら下げ（1〜3字）・スタイル（本文／H1〜H3の見出し）はカーソルのある段落（複数段落を選択した場合はその全段落）に、太字・下線・傍点は選択した文字に適用されます。傍点は範囲選択が必須で、同じ範囲をもう一度選んで押すと解除できます。Enterで段落を分けた直後は、直前の段落と同じ配置・インデント・ぶら下げ・スタイルを引き継ぎます。</li>
     <li>「開く」でPDFファイルを選ぶと、そのPDFにサイドノートを付けるモードになります。文字が選択できるPDFは範囲選択、スキャンなど文字が選択できないPDFはクリックまたはドラッグでノートの位置を指定します。</li>
     <li>保存はタイトル＋日時付きの.jsonファイルに書き出します（画像・PDF本体も内包されます）。</li>
     <li>「続きから再開」はブラウザ内の自動保存を読み込みます（.json保存とは別物で、この端末・このブラウザでのみ有効です）。</li>
@@ -205,6 +206,6 @@
   </div>
 </div>
 
-<script src="app.js?v=35"></script>
+<script src="app.js?v=36"></script>
 </body>
 </html>
