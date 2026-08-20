@@ -40,6 +40,12 @@ body {
 .toolbar button:disabled { background: #f5f6f8; color: #b7bac2; cursor: not-allowed; }
 .toolbar .filebtn2 input { display: none; }
 .toolbar .sep { width: 1px; height: 22px; background: #e2e4e9; margin: 0 2px; }
+/* 「公文書仕様」トグル。button/.filebtn2の固定118px幅は踏襲せず（チェックボックス＋短いラベルで
+   十分読めるため）、中身の幅に合わせる。 */
+.pdfmode-toggle {
+  display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 4px;
+  font-size: 12.5px; color: #31333f; cursor: pointer;
+}
 
 /* ── 本文の書式ツールバー（配置／インデント／ぶら下げ／太字下線／スタイル） ──
    ファイル操作の.toolbarとは幅・並びの性格が違う（ラベルの長さがバラバラ）ため、
@@ -125,6 +131,29 @@ body {
 /* helpPanelでは.settings-toggleを先頭（<ul>より上）に置くため、上ではなく下に余白を持たせる
    （settingsPanelでは最後の要素として使うため、そちらは上のmargin-top:14pxのままでよい）。 */
 .dropdown-panel > .settings-toggle:first-child { margin-top: 0; margin-bottom: 14px; }
+
+/* ── 「項番設定」パネル（見出しH1〜H3の見た目／項番の型ごとのインデント・ぶら下げ） ──
+   行に入力欄・セレクトが並ぶため、他のdropdown-panel（280px）より広くする。 */
+.dropdown-panel-wide { width: 420px; max-height: 74vh; overflow-y: auto; }
+.panel-heading { font-size: 12.5px; font-weight: 700; color: #31333f; margin-bottom: 10px; }
+/* 罫線ではなく余白だけでセクションを分ける（.settings-toggleと同じ考え方）。 */
+.panel-heading-2nd { margin-top: 18px; }
+.style-set-row, .num-set-row { flex-wrap: wrap; }
+.row-tag { min-width: 34px; font-weight: 700; color: #31333f; }
+.row-field { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; color: #31333f; }
+.row-field input[type="number"] {
+  width: 52px; padding: 3px 6px; border-radius: 6px; border: 1px solid #e2e4e9; font-size: 12.5px; font-family: inherit;
+}
+.row-field select {
+  padding: 3px 4px; border-radius: 6px; border: 1px solid #e2e4e9; font-size: 12.5px; font-family: inherit; background: #fff;
+}
+.row-check { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; color: #31333f; }
+.panel-apply-btn {
+  display: block; width: 100%; height: 32px; margin-top: 14px; border-radius: 6px; border: none;
+  background: #ff4b4b; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.panel-apply-btn:hover { background: #e83f3f; }
+.panel-hint { font-size: 11.5px; color: #8a8f98; line-height: 1.6; margin: 8px 0 0; }
 
 /* ── ヘルプアイコン（Streamlitのhelp=に相当・現在は未使用だが今後の説明表示用に残す）──
    標準のtitle属性は「どこにカーソルを置けば説明が出るか」が画面から分からず見落とされやすいため、
@@ -425,6 +454,23 @@ body.print-active .print-aside {
    段落の外（#printDocの直接の子）として置かれる場合（画像への注釈）は今まで通りfloat:rightのみ。 */
 body.print-active .print-para .print-aside { margin-right: -48mm; }
 body.print-active #printDoc sup { font-size: .75em; color: #666; }
+
+/* 文末脚注（「公文書仕様」オン時、buildPrintDoc内でprintFootnoteMode＝trueの間はbuildPrintAsideElの
+   代わりにこちらへ積む）。本文中は上付き番号（sup、上のルールで.75em・グレー）だけ残る。 */
+body.print-active .print-footnotes { clear: both; margin-top: 20pt; padding-top: 10pt; font-size: 9pt; line-height: 1.6; color: #000; }
+body.print-active .print-footnotes-heading { font-size: 9pt; font-weight: 700; margin: 0 0 6pt; }
+body.print-active .print-footnote-row { margin: 0 0 4pt; }
+
+/* ── 公文書仕様（行政への提出を想定したPDF化オプション） ──
+   余白のサイドノート分の幅（.print-para幅115mm＋アサイド48mm）を使わないため本文を全幅にし、
+   明朝体にする。文字サイズはbuildPrintPara側でH1〜H3のpt設定を無視して直接指定する
+   （中央ぞろえ＝タイトル扱いは16pt、それ以外は本文12pt）ので、ここでは触らない。
+   余白・行間の最終調整は追って行う（現状は通常モードのline-height:1.9を踏襲）。 */
+body.print-active.official-mode #printDoc {
+  font-family: "Yu Mincho", YuMincho, "Hiragino Mincho ProN", "MS PMincho", serif;
+}
+body.print-active.official-mode .print-para { width: 100%; }
+body.print-active.official-mode .print-img { width: 100%; max-width: 100%; }
 
 /* ── PDFモードの印刷版面（sidenote-pdfから移植） ──
    本文モードは「段落の右の余白へfloatで逃がす」方式だが、PDFページは1ページの中に複数の注釈が

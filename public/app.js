@@ -17,6 +17,9 @@ const popoverInput = document.getElementById("notePopoverInput");
 const titleInput = document.getElementById("titleInput");
 const saveBtn = document.getElementById("saveBtn");
 const savePdfBtn = document.getElementById("savePdfBtn");
+const officialModeRow = document.getElementById("officialModeRow");
+const officialModeToggle = document.getElementById("officialModeToggle");
+const exportHotlineBtn = document.getElementById("exportHotlineBtn");
 const printDocEl = document.getElementById("printDoc");
 const loadInput = document.getElementById("loadInput");
 const saveStatusEl = document.getElementById("saveStatus");
@@ -46,6 +49,22 @@ const pdfViewerEl = document.getElementById("pdfViewer");
 const introSection = document.getElementById("introSection");
 const introDismissToggle = document.getElementById("introDismissToggle");
 const showIntroToggle = document.getElementById("showIntroToggle");
+const numberingSettingsBtn = document.getElementById("numberingSettingsBtn");
+const numberingPanel = document.getElementById("numberingPanel");
+const applyNumberingBtn = document.getElementById("applyNumberingBtn");
+// 見出し（H1〜H3）の見た目設定。文字サイズ(pt)は空欄可（本文と同じ＝上書きしない）、太字はON/OFFのみ。
+const styleSettingInputs = {
+  h1: { size: document.getElementById("h1SizeInput"), bold: document.getElementById("h1BoldToggle") },
+  h2: { size: document.getElementById("h2SizeInput"), bold: document.getElementById("h2BoldToggle") },
+  h3: { size: document.getElementById("h3SizeInput"), bold: document.getElementById("h3BoldToggle") },
+};
+// 項番（行頭の型）ごとのインデント・ぶら下げ設定。
+const numberingSettingInputs = {
+  dai:    { indent: document.getElementById("numDaiIndent"),    hanging: document.getElementById("numDaiHanging") },
+  arabic: { indent: document.getElementById("numArabicIndent"), hanging: document.getElementById("numArabicHanging") },
+  paren:  { indent: document.getElementById("numParenIndent"),  hanging: document.getElementById("numParenHanging") },
+  kana:   { indent: document.getElementById("numKanaIndent"),   hanging: document.getElementById("numKanaHanging") },
+};
 
 let anchorIdSeq = 1;
 let replyIdSeq = 1;
@@ -93,11 +112,65 @@ const HANGING_CHAR_EM = 1;
 const HANGING_MAX = 3;
 // スタイルは「本文」＋見出し3段階（H1〜H3）の離散的な4択（かつての70%〜150%の連続ステッパー式
 // 文字サイズは廃止）。data-styleが無い＝本文（フォントサイズ・太さともに素のまま）。
-const PARA_STYLE_LOOKS = {
-  h1: { fontSize: "1.3em", fontWeight: "700" },
-  h2: { fontSize: "1.15em", fontWeight: "700" },
-  h3: { fontSize: "1em", fontWeight: "700" },
+// 各見出しの実際の見た目（文字サイズpt・太字）は「項番設定」パネルで文書ごとに変えられる設定
+// （paraStyleSettings、下のDEFAULT_PARA_STYLE_SETTINGSが初期値）にした。文字サイズは印刷（PDF化）
+// との一致を優先してpt単位で持つ（画面・印刷どちらもCSSのpt単位がそのまま使える）。
+// fontSizePtがnull＝本文と同じ文字サイズのまま太字だけ変える、という指定にも対応する。
+const DEFAULT_PARA_STYLE_SETTINGS = {
+  h1: { fontSizePt: 16, bold: false },
+  h2: { fontSizePt: null, bold: true },
+  h3: { fontSizePt: null, bold: true },
 };
+let paraStyleSettings = JSON.parse(JSON.stringify(DEFAULT_PARA_STYLE_SETTINGS));
+
+// ---- 項番（行頭の型）の自動判定 ----
+// 「第１」「１、」「⑴」「ア、」のような行頭の型ごとに、インデント・ぶら下げをまとめて設定できる
+// （numberingSettings、下のDEFAULT_NUMBERING_SETTINGSが初期値）。「項番を一括適用」ボタン
+// （applyNumbering）を押すと、文書内の全段落を先頭のテキストで判定し、一致した型の設定を書き込む。
+// 本文中に偶然現れる数字・カタカナ1文字を拾わないよう、「第」に続く数字（dai型）以外は直後に
+// 区切り文字（空白・句読点・丸括弧閉じ）を要求しているが、完全な誤検出防止はできないため、
+// applyNumbering側で「既に手動でインデント・ぶら下げを変えた段落は対象外」にして被害を抑えている。
+const NUMBERING_TYPES = ["dai", "arabic", "paren", "kana"];
+const NUMBERING_TYPE_LABELS = { dai: "第１型", arabic: "１型", paren: "⑴型", kana: "ア型" };
+const NUMBERING_PATTERNS = {
+  dai:    /^第[0-9０-９一二三四五六七八九十百千]+/,
+  arabic: /^[0-9０-９]+[\s　、，,．.）)]/,
+  paren:  /^([⑴-⒇]|[（(][0-9０-９]+[）)])/,
+  kana:   /^[ア-ン][\s　、，,．.）)]/,
+};
+const DEFAULT_NUMBERING_SETTINGS = {
+  dai:    { indentLevel: 0, hanging: 1 },
+  arabic: { indentLevel: 1, hanging: 1 },
+  paren:  { indentLevel: 2, hanging: 1 },
+  kana:   { indentLevel: 3, hanging: 1 },
+};
+let numberingSettings = JSON.parse(JSON.stringify(DEFAULT_NUMBERING_SETTINGS));
+
+// .jsonから読み込んだ設定を既定値へマージする（旧ファイル・欠損・改ざんされた値でも壊れないように）。
+function mergeParaStyleSettings(loaded) {
+  const merged = JSON.parse(JSON.stringify(DEFAULT_PARA_STYLE_SETTINGS));
+  if (loaded && typeof loaded === "object") {
+    Object.keys(merged).forEach((key) => {
+      const s = loaded[key];
+      if (!s || typeof s !== "object") return;
+      merged[key].fontSizePt = Number.isFinite(s.fontSizePt) ? s.fontSizePt : null;
+      merged[key].bold = !!s.bold;
+    });
+  }
+  return merged;
+}
+function mergeNumberingSettings(loaded) {
+  const merged = JSON.parse(JSON.stringify(DEFAULT_NUMBERING_SETTINGS));
+  if (loaded && typeof loaded === "object") {
+    NUMBERING_TYPES.forEach((type) => {
+      const r = loaded[type];
+      if (!r || typeof r !== "object") return;
+      if (Number.isFinite(r.indentLevel)) merged[type].indentLevel = Math.max(0, Math.min(INDENT_LEVEL_MAX, r.indentLevel));
+      if (Number.isFinite(r.hanging)) merged[type].hanging = Math.max(0, Math.min(HANGING_MAX, r.hanging));
+    });
+  }
+  return merged;
+}
 
 const debounce = (fn, ms) => {
   let t;
@@ -172,6 +245,271 @@ updatePlaceholder();
 renumberAndLayout();
 updateFormatToolbarState();
 
+// ---- Markdown取り込み（AIが書いた原稿を本文として取り込む） ----
+// 対応範囲は「AIが書く公文書ドラフト」を想定した最小限にとどめる：見出し（#〜######）は記号だけ
+// 外してただの段落として取り込む（H1〜H3の適用はユーザーが手動で行う仕様のため、自動でスタイルは
+// 付けない）・**太字**・空行区切りの段落のみ対応。箇条書き・表・リンク・コードブロック等は非対応で、
+// 記号ごとプレーンな文字として取り込まれる（今後、実際の利用実績を見て対応範囲を広げる）。
+// ブロック内の単一改行はCommonMark同様のソフト改行として1つのスペースに畳む
+// （見出し直後に空行を挟まない書き方には対応しない＝見出しも前後の段落と同じブロックに混ざる）。
+function parseMarkdownToParas(text) {
+  return text.replace(/\r\n?/g, "\n").split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean)
+    .map((block) => {
+      const line = block.replace(/\n/g, " ").replace(/^#{1,6}\s+/, "").trim();
+      return mdInlineToHtml(line);
+    });
+}
+
+// インライン書式は**太字**のみ対応する（ノート本文のformatNoteTextと違い<u>下線</u>記法は
+// AIが書く.mdでは使われない想定のため対象外。それ以外の文字はエスケープしてそのまま文字として扱う）。
+function mdInlineToHtml(line) {
+  return escapeHtml(line).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+}
+
+// 「開く」で.mdを選んだ時の入口。.jsonの「開く」と違い、既存の段落・ノート・画像・項番/スタイル
+// 設定は全て消えて本文だけ.mdの内容に差し替わる（.mdファイル自体はこれらの設定を持たないため、
+// 「新しい作業」で初期化してから本文だけ入れる動きに近い）。
+function importMarkdownFile(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const blocks = parseMarkdownToParas(String(reader.result));
+      if (!blocks.length) throw new Error("空のMarkdownファイルです");
+
+      setMode("text");
+      pdfViewerEl.innerHTML = "";
+      currentPdfDoc = null;
+      currentPdfDataUrl = null;
+      pdfAnchors = [];
+      notesByAnchor.clear();
+      anchorIdSeq = 1;
+      replyIdSeq = 1;
+      imageIdSeq = 1;
+      numberingSettings = JSON.parse(JSON.stringify(DEFAULT_NUMBERING_SETTINGS));
+      paraStyleSettings = JSON.parse(JSON.stringify(DEFAULT_PARA_STYLE_SETTINGS));
+      refreshNumberingSettingInputs();
+      refreshStyleSettingInputs();
+
+      doc.innerHTML = blocks.map((html) => `<div class="para">${html || "<br>"}</div>`).join("");
+
+      // タイトル欄（保存ファイル名用）は1つ目の段落のテキストを仮に入れておく（後から書き換え可）。
+      // 見出しのスタイル・中央ぞろえ・項番のインデントはユーザーが取り込み後に手動で適用する
+      // （タイトル中央ぞろえの自動判定は信頼できないため実装しない。インデントは既存の
+      // 「項番を一括適用」がそのまま使える）。
+      const firstText = doc.querySelector(".para")?.textContent.trim() || "";
+      titleInput.value = firstText.slice(0, 40);
+
+      renumberAndLayout();
+      updatePlaceholder();
+      updateFormatToolbarState();
+      setStatus(`Markdownを取り込みました：${file.name}（見出し・中央ぞろえ・項番のインデントは手動で適用してください）`);
+      autoSaveDebounced();
+    } catch (err) {
+      console.error(err);
+      setStatus("Markdownの取り込みに失敗しました。");
+    }
+  };
+  reader.onerror = () => setStatus("読み込みに失敗しました。");
+  reader.readAsText(file);
+}
+
+// ---- hotline向け書き出し（項番マーカー＋サイドノート） ----
+// C:\minnanosaiban\hotline のoverrides/hooks/doc_indent.pyがそのまま展開できる
+// :N X[#anchor名]: マーカー形式で本文を書き出す。data-indent-level・data-hangingが唯一の
+// 情報源で、hotline側のpadN／idt／hg-idt(2/3)と直接対応する：
+//   hanging=0            → :Ni:（indent0なら:0i:＝<p class="doc idt">、一字下げの地の文）
+//   hanging=1/2/3         → :Nh: / :Nh2: / :Nh3:（第１・１・⑴・ア等の項番見出し）
+// 中央ぞろえ（タイトル）の段落だけはマーカー化せず生HTML（<p class="doc center">）で出す
+// （center/smaller/doc-gap-top等の稀な修飾はマーカー非対応、というhotline側の設計に合わせる）。
+// アンカー（#anchor名）は「項番の見出し（ぶら下げ有り）」または「サイドノートが付いている」
+// 段落にだけ p1, p2... と機械的に振る。意味のある名前への差し替えはhotline側で手動を想定
+// （386箇所の既存アンカーも人手で付けた名前で、自動生成では意味のある名前は作れないため）。
+const HOTLINE_HANGING_KIND = { 1: "h", 2: "h2", 3: "h3" };
+
+function hotlineEscapeText(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// #doc内のノードをhotline向けのインラインHTML文字列へ変換する。buildPrintNode（PDF化用）と
+// 考え方は同じだが、（1）太字はhotlineの既存慣習に合わせて<strong>ではなく<b>にする、
+// （2）サイドノートは本文へ埋め込まず上付き番号だけ残す（中身は呼び出し側で別ブロックのasideにする）
+// 点が異なる。
+function hotlineInlineHtml(node) {
+  if (node.nodeType === Node.TEXT_NODE) return hotlineEscapeText(node.textContent);
+  if (node.nodeType !== Node.ELEMENT_NODE) return "";
+  if (node.tagName === "BR") return "<br>";
+  if (node.classList && node.classList.contains("note-anchor")) {
+    const quoted = node.querySelector("span")?.textContent || "";
+    const num = node.querySelector(".note-num")?.textContent;
+    return hotlineEscapeText(quoted) + (num ? `<sup>${num}</sup>` : "");
+  }
+  const children = () => Array.from(node.childNodes).map(hotlineInlineHtml).join("");
+  if (node.classList && node.classList.contains("kenten")) {
+    // hotline側に.kentenクラスは無いため、見た目（-webkit-text-emphasis-style）をインラインで持たせる。
+    return `<span style="-webkit-text-emphasis-style: filled dot; text-emphasis-style: filled dot;">${children()}</span>`;
+  }
+  if (node.tagName === "STRONG" || node.tagName === "B") return `<b>${children()}</b>`;
+  if (node.tagName === "U") return `<u>${children()}</u>`;
+  return children();
+}
+
+function hotlineMarkerFor(indentLevel, hanging) {
+  return `:${indentLevel}${HOTLINE_HANGING_KIND[hanging] || "i"}`;
+}
+
+// notesByAnchorの中身をhotlineのサイドノート（<aside class="sidenote">、doc_indent.pyの
+// マーカー対象外＝生HTMLのまま素通りする）へ変換する。色「重要」はhotline既存の赤強調
+// （.strong-rd、eneos-saibanの「争う」等と同じ赤）に対応させる（黒／青の色分けは
+// レビュー中だけの区別なので、公開用のhotlineには引き継がない）。
+function hotlineNoteHtml(num, notes) {
+  const body = notes.map((note) => {
+    const html = formatNoteText(note.text);   // **太字**・<u>下線</u>をHTMLへ変換（画面の表示と同じ関数）
+    return note.color === "red" ? `<span class="strong-rd">${html}</span>` : html;
+  }).join("<br>");
+  return `<aside class="sidenote"><span class="num">${num}</span>${body}</aside>`;
+}
+
+// 1段落ぶんの出力（マーカー行 or 生HTML）＋その段落に付いているサイドノートのブロック列を返す。
+function buildHotlineParaOutput(paraEl, anchorSeqRef) {
+  const indentLevel = Number(paraEl.dataset.indentLevel || 0);
+  const hanging = Number(paraEl.dataset.hanging || 0);
+  let text = Array.from(paraEl.childNodes).map(hotlineInlineHtml).join("").trim();
+  if (!text) return [];
+  // H1〜H3（画面上の見出し表示用）は、hotline側にはpt指定の概念が無いため、意図だけ太字で残す。
+  if (paraEl.dataset.style) text = `<b>${text}</b>`;
+
+  const noteGroups = Array.from(paraEl.querySelectorAll(".note-anchor"))
+    .map((anchor) => {
+      const num = anchor.querySelector(".note-num")?.textContent;
+      const notes = notesByAnchor.get(anchor.dataset.anchorId) || [];
+      return num && notes.length ? { num, notes } : null;
+    })
+    .filter(Boolean);
+
+  const needsAnchor = hanging > 0 || noteGroups.length > 0;
+  const anchorPart = needsAnchor ? `#p${anchorSeqRef.n++}` : "";
+
+  const mainBlock = paraEl.dataset.align === "center"
+    ? `<p class="doc center">\n${text}\n</p>`   // タイトル等はマーカー化せず生HTMLで出す
+    : `${hotlineMarkerFor(indentLevel, hanging)}${anchorPart}: ${text}`;
+
+  return [mainBlock, ...noteGroups.map((g) => hotlineNoteHtml(g.num, g.notes))];
+}
+
+function buildHotlineMarkdown() {
+  const paras = Array.from(doc.querySelectorAll(".para"));
+  const imageCount = paras.filter((p) => p.classList.contains("para-image")).length;
+  const anchorSeqRef = { n: 1 };
+  const blocks = [];
+  paras.forEach((p) => {
+    if (p.classList.contains("para-image")) return;   // 画像はhotline書き出しの対象外（下の注記で警告）
+    blocks.push(...buildHotlineParaOutput(p, anchorSeqRef));
+  });
+  if (!blocks.length) return null;
+  return { md: blocks.join("\n\n") + "\n", imageCount };
+}
+
+// ---- hotline書き出しの保存先（File System Access API） ----
+// hotlineリポジトリのdocs/trial/parts/へ直接ファイルを書き込み、「ダウンロード→探す→
+// 貼り付け」の手作業を無くす。書面の再編集→再書き出しは同名ファイルの上書きで完結させる
+// 前提なので、ファイル名はタイトル由来の安定した名前にする（日時は付けない。日時付きの
+// 控えが必要な用途は.json保存が担う）。フォルダのハンドルはIndexedDBに永続化し、初回だけ
+// フォルダ選択・以後は許可の再確認のみ（Chromeはハンドル自体を構造化クローンで保存できる）。
+// localStorageでなくIndexedDBなのは、FileSystemDirectoryHandleが文字列化できないため。
+const IDB_NAME = "sidenote-pdf-doc";
+const IDB_STORE = "handles";
+const HOTLINE_DIR_KEY = "hotlineExportDir";
+
+function idbOpen() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(IDB_STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function idbGet(key) {
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const rq = db.transaction(IDB_STORE, "readonly").objectStore(IDB_STORE).get(key);
+    rq.onsuccess = () => resolve(rq.result);
+    rq.onerror = () => reject(rq.error);
+  });
+}
+async function idbSet(key, value) {
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    tx.objectStore(IDB_STORE).put(value, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+// 保存先フォルダへmdを書き込む。戻り値はフォルダ名（表示用）。
+// File System Access API非対応（Firefox等）ならnullを返し、呼び出し側がダウンロードへ落とす。
+async function saveHotlineFileDirect(md, filename, forceRepick) {
+  if (!window.showDirectoryPicker) return null;
+  let dir = null;
+  if (!forceRepick) {
+    try { dir = await idbGet(HOTLINE_DIR_KEY); } catch (err) { /* 初回等、無ければ選ばせる */ }
+  }
+  if (dir) {
+    // 保存済みハンドルの権限はセッションごとに失効するため、毎回確認→必要なら再要求する
+    // （requestPermissionはユーザー操作起点でしか呼べないが、ここはボタンクリック中なのでOK）。
+    let perm = await dir.queryPermission({ mode: "readwrite" });
+    if (perm !== "granted") perm = await dir.requestPermission({ mode: "readwrite" });
+    if (perm !== "granted") dir = null;
+  }
+  if (!dir) {
+    dir = await window.showDirectoryPicker({ mode: "readwrite" });
+    try { await idbSet(HOTLINE_DIR_KEY, dir); } catch (err) { /* 保存失敗しても今回分の書き込みは続行 */ }
+  }
+  const fileHandle = await dir.getFileHandle(filename, { create: true });
+  const writable = await fileHandle.createWritable();
+  await writable.write(md);
+  await writable.close();
+  return dir.name;
+}
+
+// Ctrl+クリック＝クリップボードへコピー（ファイル保存なし。一部だけ手で貼りたい時の保険）。
+// Shift+クリック＝保存先フォルダを選び直す。通常クリック＝記憶したフォルダへ直接保存
+// （非対応ブラウザは従来どおりダウンロード）。
+async function exportHotlineMarkdown(e) {
+  const built = buildHotlineMarkdown();
+  if (!built) { setStatus("書き出す本文がありません。"); return; }
+  const { md, imageCount } = built;
+  const imageNote = imageCount ? `（画像${imageCount}件は対象外のため含まれていません）` : "";
+
+  if (e && e.ctrlKey) {
+    try {
+      await navigator.clipboard.writeText(md);
+      setStatus(`hotline向けMarkdownをクリップボードへコピーしました${imageNote}`);
+    } catch (err) {
+      console.error(err);
+      setStatus("クリップボードへのコピーに失敗しました。");
+    }
+    return;
+  }
+
+  const filename = `${sanitizeFilename(projectTitle()) || "hotline-export"}.md`;
+  try {
+    const dirName = await saveHotlineFileDirect(md, filename, e && e.shiftKey);
+    if (dirName !== null) {
+      setStatus(`hotline向けに保存しました：${dirName}/${filename}${imageNote}`);
+      return;
+    }
+  } catch (err) {
+    if (err && err.name === "AbortError") { setStatus("保存をキャンセルしました。"); return; }
+    console.error(err);   // 直接保存に失敗した場合は下のダウンロードへ落とす（書き出し自体は成立させる）
+  }
+  downloadBlob(new Blob([md], { type: "text/markdown" }), filename);
+  setStatus(`hotline向けに書き出しました（ダウンロード）：${filename}${imageNote}`);
+}
+exportHotlineBtn.onclick = (e) => exportHotlineMarkdown(e);
+
 // ---- 保存・読み込み（.jsonファイル） ----
 // 長文の作業を前提に、途中まで進めた内容をファイルとして残せるようにする。
 // 案件ごとに別ファイルとして残せるよう、タイトル欄の内容をファイル名に含める。
@@ -182,7 +520,7 @@ function projectTitle() {
 function serializeProject() {
   const base = {
     app: "sidenote-pdf",
-    version: 3,
+    version: 4,
     title: projectTitle(),
     savedAt: new Date().toISOString(),
     mode: currentMode,
@@ -190,6 +528,10 @@ function serializeProject() {
     anchorIdSeq,
     replyIdSeq,
     colorNames: { ...colorNames },   // 黒・青の名前もファイルに残す（開いた人が同じ表示で見られるように）
+    // 「項番設定」パネルの内容（見出しH1〜H3の見た目、項番の型ごとのインデント・ぶら下げ）も
+    // 文書ごとの設定としてファイルに残す（v4で追加。無い旧ファイルはmergeXxxSettings側で既定値になる）。
+    paraStyleSettings: JSON.parse(JSON.stringify(paraStyleSettings)),
+    numberingSettings: JSON.parse(JSON.stringify(numberingSettings)),
   };
   if (currentMode === "pdf") {
     // 元PDFをdata URLのまま内包する（画像を.jsonに内包しているのと同じ考え方）。
@@ -200,6 +542,11 @@ function serializeProject() {
 
 function applyProjectData(data) {
   if (!data) throw new Error("invalid project data");
+  // 「項番設定」パネルの内容もこのファイルの値で上書きする（モードに関わらず共通、無ければ既定値）。
+  paraStyleSettings = mergeParaStyleSettings(data.paraStyleSettings);
+  numberingSettings = mergeNumberingSettings(data.numberingSettings);
+  refreshStyleSettingInputs();
+  refreshNumberingSettingInputs();
   if (data.mode === "pdf") {
     if (typeof data.pdfDataUrl !== "string") throw new Error("invalid pdf project data");
     notesByAnchor.clear();
@@ -285,6 +632,15 @@ saveBtn.onclick = () => {
 // 原理的に起きない）。ページをまたぐレイアウトでは絶対座標（画面と同じ方式）が使えないため、
 // float方式を使う。
 
+// 「公文書仕様」（officialModeToggle）がオンの間だけ立てるフラグ。行政への提出を想定し、
+// サイドノートを余白ではなく文書の最後にまとめた文末脚注にし（printFootnoteMode）、
+// 文字サイズ・フォントもH1〜H3の設定を無視して統一する（printOfficialMode、buildPrintPara参照）。
+// collectedFootnotesは文末脚注モードの間だけ使う一時的な蓄積先で、buildPrintDoc呼び出しのたびに
+// 空にする（savePdfBtn.onclickとCtrl+Alt+Pのプレビュー、両方の入口で毎回リセットする）。
+let printOfficialMode = false;
+let printFootnoteMode = false;
+let collectedFootnotes = [];   // [{num, notes}, ...] 文中に現れた順
+
 // #doc内のノードをprintDoc用のDOMへ再帰的に組み立てる。
 function buildPrintNode(node) {
   if (node.nodeType === Node.TEXT_NODE) return document.createTextNode(node.textContent);
@@ -301,8 +657,13 @@ function buildPrintNode(node) {
       frag.appendChild(sup);
       // サイドノート本文を、対応する一文のすぐ後ろにインラインで埋め込む。段落を分割しないため、
       // ここに差し込んでもテキストの流れは途切れない（見た目はCSS側のfloatが担当する）。
+      // 文末脚注モード（公文書仕様）の間は、その場には埋め込まずcollectedFootnotesへ積んでおき、
+      // buildPrintDocの最後でまとめて並べる（本文中に残すのは上のsup番号だけ）。
       const notes = notesByAnchor.get(node.dataset.anchorId) || [];
-      if (notes.length) frag.appendChild(buildPrintAsideEl(num, notes));
+      if (notes.length) {
+        if (printFootnoteMode) collectedFootnotes.push({ num, notes });
+        else frag.appendChild(buildPrintAsideEl(num, notes));
+      }
     }
     return frag;
   }
@@ -323,28 +684,43 @@ function buildPrintNode(node) {
   return container;
 }
 
-function buildPrintAsideEl(num, notes) {
-  const aside = document.createElement("aside");
-  aside.className = "print-aside";
+// 番号＋注釈本文（複数件なら改行区切り）をcontainerへ組み立てる。余白のアサイド（buildPrintAsideEl）
+// と文末脚注（buildPrintFootnoteRow）はどちらもこの中身を使い、外側の入れ物だけが違う。
+function appendNoteContent(container, num, notes) {
   const sup = document.createElement("sup");
   sup.textContent = num;
-  aside.appendChild(sup);
-  aside.appendChild(document.createTextNode(" "));
+  container.appendChild(sup);
+  container.appendChild(document.createTextNode(" "));
   notes.forEach((note, i) => {
-    if (i > 0) aside.appendChild(document.createElement("br"));
+    if (i > 0) container.appendChild(document.createElement("br"));
     // PDFは画面と同じく色が見える（mdと違い色の情報を残せる）ため、「設定」の名前表示オンオフ・
     // 色分けとも画面の表示にそのまま揃える（mdは常に名前を出す＝別扱いのまま）。
     if (showAuthorLabel) {
       const strong = document.createElement("strong");
       strong.textContent = `${colorLabel(note.color)}：`;
-      aside.appendChild(strong);
+      container.appendChild(strong);
     }
     const span = document.createElement("span");
     span.style.color = AUTHOR_COLOR_HEX[note.color] || AUTHOR_COLOR_HEX.black;
     span.innerHTML = formatNoteText(note.text);   // **太字**・<u>下線</u>をHTMLへ変換（画面の表示と同じ関数）
-    aside.appendChild(span);
+    container.appendChild(span);
   });
+}
+
+function buildPrintAsideEl(num, notes) {
+  const aside = document.createElement("aside");
+  aside.className = "print-aside";
+  appendNoteContent(aside, num, notes);
   return aside;
+}
+
+// 文末脚注1件ぶんの行。buildPrintAsideElと違いfloatさせない通常のブロックとして、
+// 文末脚注セクション（buildPrintDoc末尾）に出現順で積む。
+function buildPrintFootnoteRow(num, notes) {
+  const p = document.createElement("p");
+  p.className = "print-footnote-row";
+  appendNoteContent(p, num, notes);
+  return p;
 }
 
 // 段落は分割せず1つの<p class="print-para">のまま保つ（注釈のサイドノートはbuildPrintNode内で
@@ -363,19 +739,31 @@ function buildPrintPara(paraEl) {
     p.style.paddingLeft = `${base + hangingChars * HANGING_CHAR_EM}em`;
     p.style.textIndent = hangingChars > 0 ? `-${hangingChars * HANGING_CHAR_EM}em` : "0";
   }
-  // 配置・スタイルも画面（#doc）側の書式ツールバーで付けたdata属性をそのまま踏襲する。
+  // 配置・スタイルも画面（#doc）側の書式ツールバーで付けたdata属性をそのまま踏襲する
+  // （スタイルの実際の見た目＝文字サイズ・太字は「項番設定」パネルのparaStyleSettingsから引く）。
   if (paraEl.dataset.align) p.style.textAlign = paraEl.dataset.align;
-  const styleLook = PARA_STYLE_LOOKS[paraEl.dataset.style];
-  if (styleLook) { p.style.fontSize = styleLook.fontSize; p.style.fontWeight = styleLook.fontWeight; }
+  const styleLook = paraStyleSettings[paraEl.dataset.style];
+  if (printOfficialMode) {
+    // 公文書仕様：文字サイズはH1〜H3の設定を無視し、中央ぞろえ＝タイトル扱いで16pt、
+    // それ以外は本文12ptに統一する（太字だけはH1〜H3のbold設定をそのまま引き継ぐ）。
+    p.style.fontSize = paraEl.dataset.align === "center" ? "16pt" : "12pt";
+  } else if (styleLook && styleLook.fontSizePt) {
+    p.style.fontSize = `${styleLook.fontSizePt}pt`;
+  }
+  if (styleLook && styleLook.bold) p.style.fontWeight = "700";
   Array.from(paraEl.childNodes).forEach((n) => p.appendChild(buildPrintNode(n)));
   return p;
 }
 
 function buildPrintDoc() {
   printDocEl.innerHTML = "";
+  collectedFootnotes = [];   // 文末脚注モードの蓄積先をこの回の分だけにする
 
+  // 公文書仕様では、このファイル管理用のタイトル（保存ファイル名に使うtitleInputの値）は
+  // 文書そのものの内容ではないため出さない。実際の文書タイトルは本文側で中央ぞろえした段落
+  // （buildPrintPara側で16pt扱いになる）をユーザーが自分で用意する想定。
   const title = projectTitle();
-  if (title) {
+  if (title && !printOfficialMode) {
     const titleEl = document.createElement("div");
     titleEl.className = "print-title";
     titleEl.textContent = title;
@@ -395,7 +783,10 @@ function buildPrintDoc() {
       const badge = child.querySelector(".note-anchor");
       const num = badge?.querySelector(".note-num")?.textContent;
       const notes = badge ? notesByAnchor.get(badge.dataset.anchorId) || [] : [];
-      if (num && notes.length) printDocEl.appendChild(buildPrintAsideEl(num, notes));
+      if (num && notes.length) {
+        if (printFootnoteMode) collectedFootnotes.push({ num, notes });
+        else printDocEl.appendChild(buildPrintAsideEl(num, notes));
+      }
     } else {
       // buildPrintNode/buildPrintParaは再帰的なDOM構築のみ（複雑な分割ロジックは無い）なので
       // 通常は失敗しないはずだが、想定外の構造（壊れたデータの.json読み込み時等）でも印刷全体
@@ -413,6 +804,19 @@ function buildPrintDoc() {
     }
   });
 
+  // 文末脚注モード：本文を組み終えた後、集めておいた注釈を出現順のまま文書の最後にまとめて置く
+  // （本文中に残っているのは各注釈の上付き番号だけ）。
+  if (printFootnoteMode && collectedFootnotes.length) {
+    const section = document.createElement("div");
+    section.className = "print-footnotes";
+    const heading = document.createElement("div");
+    heading.className = "print-footnotes-heading";
+    heading.textContent = "脚注";
+    section.appendChild(heading);
+    collectedFootnotes.forEach(({ num, notes }) => section.appendChild(buildPrintFootnoteRow(num, notes)));
+    printDocEl.appendChild(section);
+  }
+
   // 直後にwindow.print()（またはプレビュー用のクラス切り替え）が呼ばれる前に、大量のfloat要素を
   // 書き換えた後のレイアウトを強制的に確定させる（読み取りアクセスでリフローを強制する定番の手法）。
   // これを入れずに直後printすると、印刷専用のレンダリングパスがレイアウト未確定のまま走り、
@@ -427,15 +831,24 @@ function buildPrintDocForCurrentMode() {
   buildPrintDoc();
 }
 
+// 印刷直前に「公文書仕様」チェックボックスの状態をprintOfficialMode/printFootnoteModeへ反映する
+// （savePdfBtn.onclickとCtrl+Alt+Pのプレビュー、両方の入口で毎回呼ぶ）。
+function applyOfficialModeFlags() {
+  printOfficialMode = officialModeToggle.checked;
+  printFootnoteMode = printOfficialMode;
+}
+
 savePdfBtn.onclick = () => {
   try {
+    applyOfficialModeFlags();
     buildPrintDocForCurrentMode();
     document.body.classList.add("print-active");
+    document.body.classList.toggle("official-mode", printOfficialMode);
     window.print();   // Chromeではこの呼び出しはダイアログが閉じるまでブロックするので、直後にクラスを外してよい
   } finally {
     // buildPrintDoc()やwindow.print()の途中で何か例外が起きても、印刷専用の見た目のまま
     // 編集画面に固まってしまわないよう、必ずクラスを外す。
-    document.body.classList.remove("print-active");
+    document.body.classList.remove("print-active", "official-mode");
   }
 };
 
@@ -445,8 +858,10 @@ savePdfBtn.onclick = () => {
 document.addEventListener("keydown", (e) => {
   if (e.ctrlKey && e.altKey && e.key.toLowerCase() === "p") {
     e.preventDefault();
+    applyOfficialModeFlags();
     buildPrintDocForCurrentMode();
-    document.body.classList.toggle("print-active");
+    const nowActive = document.body.classList.toggle("print-active");
+    document.body.classList.toggle("official-mode", nowActive && printOfficialMode);
   }
 });
 
@@ -455,9 +870,13 @@ loadInput.onchange = (e) => {
   loadInput.value = "";   // 同じファイルを続けて開き直せるようにリセット
   if (!file) return;
 
-  // 拡張子で.pdfと.jsonを振り分ける（ボタンは増やさず「開く」1つで両方を受け付ける方針）。
+  // 拡張子で.pdf・.md・.jsonを振り分ける（ボタンは増やさず「開く」1つで全て受け付ける方針）。
   if (file.type === "application/pdf" || /\.pdf$/i.test(file.name)) {
     openPdfFile(file);
+    return;
+  }
+  if (file.type === "text/markdown" || /\.md$/i.test(file.name)) {
+    importMarkdownFile(file);
     return;
   }
 
@@ -542,6 +961,11 @@ resumeDiscardBtn.onclick = () => {
   resetDoc();
   notesByAnchor.clear();
   titleInput.value = "";
+  // 「項番設定」パネルの内容も文書ごとの設定なので、新しい案件では既定値に戻す。
+  paraStyleSettings = JSON.parse(JSON.stringify(DEFAULT_PARA_STYLE_SETTINGS));
+  numberingSettings = JSON.parse(JSON.stringify(DEFAULT_NUMBERING_SETTINGS));
+  refreshStyleSettingInputs();
+  refreshNumberingSettingInputs();
   renumberAndLayout();
   updatePlaceholder();
   updateFormatToolbarState();
@@ -680,10 +1104,97 @@ function toggleDropdownPanel(panelEl, btnEl) {
 }
 settingsBtn.onclick = () => toggleDropdownPanel(settingsPanel, settingsBtn);
 helpBtn.onclick = () => toggleDropdownPanel(helpPanel, helpBtn);
+numberingSettingsBtn.onclick = () => toggleDropdownPanel(numberingPanel, numberingSettingsBtn);
+
+// ---- 「項番設定」パネル：見出し（H1〜H3）の見た目と、項番の型ごとのインデント・ぶら下げ ----
+// どちらも.jsonに保存する文書ごとの設定（serializeProject/applyProjectData参照）なので、
+// localStorageへの端末既定値は持たない（colorNames等とは違う扱い）。
+// パネルの入力欄をparaStyleSettings/numberingSettingsの現在値に合わせて表示し直す。
+// .json読み込み・「新しい作業」での初期化のたびに呼ぶ。
+function refreshStyleSettingInputs() {
+  Object.keys(styleSettingInputs).forEach((key) => {
+    const s = paraStyleSettings[key];
+    styleSettingInputs[key].size.value = s.fontSizePt != null ? String(s.fontSizePt) : "";
+    styleSettingInputs[key].bold.checked = !!s.bold;
+  });
+}
+function refreshNumberingSettingInputs() {
+  NUMBERING_TYPES.forEach((type) => {
+    numberingSettingInputs[type].indent.value = String(numberingSettings[type].indentLevel);
+    numberingSettingInputs[type].hanging.value = String(numberingSettings[type].hanging);
+  });
+}
+// 見出しの文字サイズ・太字を変えたら、既にH1〜H3を付けている段落全部に即反映する
+// （data属性ではなくparaStyleSettings側が変わるため、単発のapplyParaStyles(paras)では拾えない）。
+function reapplyAllParaStyles() {
+  applyParaStyles(Array.from(doc.querySelectorAll(".para:not(.para-image)")));
+}
+Object.keys(styleSettingInputs).forEach((key) => {
+  styleSettingInputs[key].size.oninput = () => {
+    const raw = styleSettingInputs[key].size.value.trim();
+    paraStyleSettings[key].fontSizePt = raw === "" ? null : Number(raw);
+    reapplyAllParaStyles();
+    autoSaveDebounced();
+  };
+  styleSettingInputs[key].bold.onchange = () => {
+    paraStyleSettings[key].bold = styleSettingInputs[key].bold.checked;
+    reapplyAllParaStyles();
+    autoSaveDebounced();
+  };
+});
+NUMBERING_TYPES.forEach((type) => {
+  numberingSettingInputs[type].indent.onchange = () => {
+    numberingSettings[type].indentLevel = Number(numberingSettingInputs[type].indent.value) || 0;
+    autoSaveDebounced();
+  };
+  numberingSettingInputs[type].hanging.onchange = () => {
+    numberingSettings[type].hanging = Number(numberingSettingInputs[type].hanging.value) || 0;
+    autoSaveDebounced();
+  };
+});
+refreshStyleSettingInputs();
+refreshNumberingSettingInputs();
+
+// 段落の行頭テキストが項番の型（第１型／１型／⑴型／ア型）のどれかに一致するかを判定する。
+// マッチしなければnull。textContentは配下のspan（傍点・note-anchor等）の入れ子に関わらず
+// フラットな文字列を返すので、DOM構造に関わらずこの判定が使える。
+function detectNumberingType(paraEl) {
+  const text = (paraEl.textContent || "").trimStart();
+  for (const type of NUMBERING_TYPES) {
+    if (NUMBERING_PATTERNS[type].test(text)) return type;
+  }
+  return null;
+}
+
+// 「項番を一括適用」：文書内の全段落（画像を除く）を先頭から判定し、一致した型の設定
+// （インデント・ぶら下げ）を書き込む。既にインデント・ぶら下げを持つ段落のうち、それが
+// このボタン自身の適用でついたもの（data-numbered）ではない＝手動で書式を変えた段落は
+// 対象から外して保護する（インデント・ぶら下げのボタンを直接押すとdata-numberedは外れる）。
+function applyNumbering() {
+  const paras = Array.from(doc.querySelectorAll(".para:not(.para-image)"));
+  let applied = 0, skipped = 0;
+  paras.forEach((p) => {
+    const type = detectNumberingType(p);
+    if (!type) return;
+    const hasManualFormat = (p.dataset.indentLevel || p.dataset.hanging) && !p.dataset.numbered;
+    if (hasManualFormat) { skipped++; return; }
+    const rule = numberingSettings[type];
+    if (rule.indentLevel > 0) p.dataset.indentLevel = String(rule.indentLevel); else delete p.dataset.indentLevel;
+    if (rule.hanging > 0) p.dataset.hanging = String(rule.hanging); else delete p.dataset.hanging;
+    p.dataset.numbered = type;
+    applied++;
+  });
+  applyParaStyles(paras);
+  updateFormatToolbarState();
+  autoSaveDebounced();
+  setStatus(`項番を適用しました（${applied}段落に適用／手動書式のため${skipped}段落をスキップ）`);
+}
+applyNumberingBtn.onclick = applyNumbering;
 
 function openPopover(rect) {
   settingsPanel.hidden = true;
   helpPanel.hidden = true;
+  numberingPanel.hidden = true;
   popoverInput.value = "";
   popoverEl.hidden = false;
   updateColorPickerSelection();
@@ -1006,6 +1517,7 @@ function deletePara(para) {
     delete para.dataset.hanging;
     delete para.dataset.align;
     delete para.dataset.style;
+    delete para.dataset.numbered;
     para.innerHTML = "<br>";
   } else {
     para.remove();
@@ -1113,9 +1625,11 @@ function applyParaStyles(paras) {
       p.style.textIndent = "";
     }
     p.style.textAlign = p.dataset.align || "";
-    const styleLook = PARA_STYLE_LOOKS[p.dataset.style];
-    if (styleLook) { p.style.fontSize = styleLook.fontSize; p.style.fontWeight = styleLook.fontWeight; }
-    else { p.style.fontSize = ""; p.style.fontWeight = ""; }
+    // 見出しの実際の見た目（文字サイズ・太字）は「項番設定」パネルのparaStyleSettingsから引く
+    // （fontSizePtがnull＝本文と同じ文字サイズのまま、boldだけ独立して効かせる）。
+    const styleLook = paraStyleSettings[p.dataset.style];
+    p.style.fontSize = (styleLook && styleLook.fontSizePt) ? `${styleLook.fontSizePt}pt` : "";
+    p.style.fontWeight = (styleLook && styleLook.bold) ? "700" : "";
   });
 }
 
@@ -1145,6 +1659,7 @@ function applyIndentStep(delta) {
   paras.forEach((p) => {
     const level = Math.max(0, Math.min(INDENT_LEVEL_MAX, Number(p.dataset.indentLevel || 0) + delta));
     if (level === 0) delete p.dataset.indentLevel; else p.dataset.indentLevel = String(level);
+    delete p.dataset.numbered;   // 手動で変えた段落は「項番を一括適用」の対象から外して保護する
   });
   applyParaStyles(paras);
   updateFormatToolbarState();
@@ -1160,6 +1675,7 @@ function applyHangingStep(delta) {
   paras.forEach((p) => {
     const chars = Math.max(0, Math.min(HANGING_MAX, Number(p.dataset.hanging || 0) + delta));
     if (chars === 0) delete p.dataset.hanging; else p.dataset.hanging = String(chars);
+    delete p.dataset.numbered;   // 手動で変えた段落は「項番を一括適用」の対象から外して保護する
   });
   applyParaStyles(paras);
   updateFormatToolbarState();
@@ -1535,6 +2051,10 @@ function setMode(mode) {
   // 本文用の書式ツールバーはPDFページには適用できないため、pdfモードでは隠す
   // （sidenote-pdfには無い、doc版固有の対応）。
   formatToolbarEl.hidden = isPdf;
+  // 「公文書仕様」も本文（段落）向けの文字サイズ・フォント上書きなので、pdfモードでは意味を持たず隠す。
+  officialModeRow.hidden = isPdf;
+  // hotline書き出しも段落（data-indent-level等）が無いpdfモードでは意味を持たず隠す。
+  exportHotlineBtn.hidden = isPdf;
   // モード切り替え時に前の状態を持ち越さない（本文モード側のホバーアイコン）。
   paraHoverEl.hidden = true;
   hoveredPara = null;
