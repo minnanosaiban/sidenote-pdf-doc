@@ -3,19 +3,25 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>サイドノート資料作成</title>
+<title>公文書ウェブ掲載アプリ</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://sidenote-pdf-doc.pages.dev/">
-<meta property="og:title" content="サイドノート資料作成">
-<meta property="og:description" content="文章やスクショにサイドノートを書き込んでPDFにできるアプリ">
+<meta property="og:title" content="公文書ウェブ掲載アプリ">
+<meta property="og:description" content="公文書（準備書面等）をサイドノートで検討しながら作成し、PDFやウェブに書き出せるアプリ">
 <meta property="og:image" content="https://sidenote-pdf-doc.pages.dev/og-image-large.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:type" content="image/png">
+<!-- 正方形寄りのプレビュー（LINE等）向けの2枚目のog:image。1枚目(大)を優先し、こちらは
+     summary型で拾われた場合の予備。OGPは複数og:imageを許容する仕様。 -->
+<meta property="og:image" content="https://sidenote-pdf-doc.pages.dev/og-image-square.png">
+<meta property="og:image:width" content="630">
+<meta property="og:image:height" content="630">
+<meta property="og:image:type" content="image/png">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="サイドノート資料作成">
-<meta name="twitter:description" content="文章やスクショにサイドノートを書き込んでPDFにできるアプリ">
+<meta name="twitter:title" content="公文書ウェブ掲載アプリ">
+<meta name="twitter:description" content="公文書（準備書面等）をサイドノートで検討しながら作成し、PDFやウェブに書き出せるアプリ">
 <meta name="twitter:image" content="https://sidenote-pdf-doc.pages.dev/og-image-large.png">
 <!-- ?v=NUM はキャッシュ対策。style.css/app.jsを直す度に、直したファイルの番号だけ+1する。 -->
 <link rel="stylesheet" href="style.css?v=34">
@@ -23,7 +29,7 @@
 <body>
 
 <div class="app-frame">
-<h1 class="app-title">サイドノート資料作成</h1>
+<h1 class="app-title">公文書ウェブ掲載アプリ</h1>
 <!-- 機能説明はカード形式（旧・箇条書きの.hintから移行、sidenote-pdfから移植）。「次回から表示しない」で
      #introSectionごと隠し、再表示はヘルプパネル内のチェックボックスから行う（showIntro、localStorageで永続化）。
      カードの内容はsidenote-pdfをそのまま移植したもので、本文用書式ツールバーなどこのアプリ固有の機能に
