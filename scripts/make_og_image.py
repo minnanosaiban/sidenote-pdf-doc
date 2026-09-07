@@ -61,8 +61,8 @@ def make_square():
 def make_large():
     w, h = 1200, 630
     pad_x_title, pad_x_sub, gap = 90, 90, 40
-    title = "公文書ウェブ掲載アプリ"
-    subtitle = "公文書をサイドノートで検討しながら作成し、PDFやウェブに書き出せるアプリ"
+    title = "公文書ウェブ掲載ツール"
+    subtitle = "公文書をサイドノートで検討しながら作成し、PDFやウェブに書き出せるツール"
 
     scratch = ImageDraw.Draw(Image.new("RGB", (10, 10)))
     title_font, tb, title_size = fit(scratch, title, w - 2 * pad_x_title, 200)

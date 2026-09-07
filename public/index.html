@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>公文書ウェブ掲載アプリ</title>
+<title>公文書ウェブ掲載ツール</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://sidenote-pdf-doc.pages.dev/">
-<meta property="og:title" content="公文書ウェブ掲載アプリ">
-<meta property="og:description" content="公文書（準備書面等）をサイドノートで検討しながら作成し、PDFやウェブに書き出せるアプリ">
+<meta property="og:title" content="公文書ウェブ掲載ツール">
+<meta property="og:description" content="公文書（準備書面等）をサイドノートで検討しながら作成し、PDFやウェブに書き出せるツール">
 <!-- og:imageは正方形を1枚目に置く。多くのクローラー(Teams等)は複数og:imageのうち
      1枚目を機械的に使い、小さいサムネイル枠では中央を正方形にトリミングする。1枚目が
      横長(1200x630)だと左右の端が切れてタイトル文字が欠ける実害を確認したため、
@@ -23,8 +23,8 @@
 <meta property="og:image:height" content="630">
 <meta property="og:image:type" content="image/png">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="公文書ウェブ掲載アプリ">
-<meta name="twitter:description" content="公文書（準備書面等）をサイドノートで検討しながら作成し、PDFやウェブに書き出せるアプリ">
+<meta name="twitter:title" content="公文書ウェブ掲載ツール">
+<meta name="twitter:description" content="公文書（準備書面等）をサイドノートで検討しながら作成し、PDFやウェブに書き出せるツール">
 <meta name="twitter:image" content="https://sidenote-pdf-doc.pages.dev/og-image-large.png">
 <!-- ?v=NUM はキャッシュ対策。style.css/app.jsを直す度に、直したファイルの番号だけ+1する。 -->
 <link rel="stylesheet" href="style.css?v=34">
@@ -32,14 +32,14 @@
 <body>
 
 <div class="app-frame">
-<h1 class="app-title">公文書ウェブ掲載アプリ</h1>
+<h1 class="app-title">公文書ウェブ掲載ツール</h1>
 <!-- 機能説明はカード形式（旧・箇条書きの.hintから移行、sidenote-pdfから移植）。「次回から表示しない」で
      #introSectionごと隠し、再表示はヘルプパネル内のチェックボックスから行う（showIntro、localStorageで永続化）。
-     カードの内容はsidenote-pdfをそのまま移植したもので、本文用書式ツールバーなどこのアプリ固有の機能に
+     カードの内容はsidenote-pdfをそのまま移植したもので、本文用書式ツールバーなどこのツール固有の機能に
      ついてはまだ反映していない（後で追加予定）。 -->
 <div class="intro" id="introSection">
   <div class="intro-grid">
-    <div class="intro-card">ローカルで完結するサイドノートを置くアプリです</div>
+    <div class="intro-card">ローカルで完結するサイドノートを置くツールです</div>
     <div class="intro-card">開く・保存のファイル形式は.json。.pdfも開けます</div>
     <div class="intro-card">段落にカーソルを乗せると画像の挿入・段落の削除ができます</div>
     <div class="intro-card">テキスト・画像・位置を選択後、入力欄でサイドノートを置きます</div>
