@@ -2,8 +2,8 @@
   <rect width="630" height="630" fill="#000000"/>
   <text x="315" y="242" text-anchor="middle" dominant-baseline="central"
         font-family="'Hiragino Sans','Hiragino Kaku Gothic ProN','Yu Gothic',Meiryo,sans-serif"
-        font-weight="400" font-size="114" fill="#ffffff">公文書</text>
+        font-weight="400" font-size="79" fill="#ffffff">サイドノート</text>
   <text x="315" y="386" text-anchor="middle" dominant-baseline="central"
         font-family="'Hiragino Sans','Hiragino Kaku Gothic ProN','Yu Gothic',Meiryo,sans-serif"
-        font-weight="400" font-size="114" fill="#ffffff">ウェブ掲載</text>
+        font-weight="400" font-size="79" fill="#ffffff">書面レイアウト</text>
 </svg>

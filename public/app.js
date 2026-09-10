@@ -19,7 +19,6 @@ const saveBtn = document.getElementById("saveBtn");
 const savePdfBtn = document.getElementById("savePdfBtn");
 const officialModeRow = document.getElementById("officialModeRow");
 const officialModeToggle = document.getElementById("officialModeToggle");
-const exportHotlineBtn = document.getElementById("exportHotlineBtn");
 const printDocEl = document.getElementById("printDoc");
 const loadInput = document.getElementById("loadInput");
 const saveStatusEl = document.getElementById("saveStatus");
@@ -30,8 +29,6 @@ const settingsPanel = document.getElementById("settingsPanel");
 const nameBlackInput = document.getElementById("nameBlack");
 const nameBlueInput = document.getElementById("nameBlue");
 const showNamesToggle = document.getElementById("showNamesToggle");
-const helpBtn = document.getElementById("helpBtn");
-const helpPanel = document.getElementById("helpPanel");
 const formatToolbarEl = document.getElementById("formatToolbar");
 const alignBtns = Array.from(formatToolbarEl.querySelectorAll("[data-align]"));
 const indentDecBtn = document.getElementById("indentDecBtn");
@@ -46,9 +43,6 @@ const styleBtns = Array.from(formatToolbarEl.querySelectorAll("[data-style]"));
 const docStackEl = document.getElementById("docStack");
 const docLabelEl = document.getElementById("docLabel");
 const pdfViewerEl = document.getElementById("pdfViewer");
-const introSection = document.getElementById("introSection");
-const introDismissToggle = document.getElementById("introDismissToggle");
-const showIntroToggle = document.getElementById("showIntroToggle");
 const numberingSettingsBtn = document.getElementById("numberingSettingsBtn");
 const numberingPanel = document.getElementById("numberingPanel");
 const applyNumberingBtn = document.getElementById("applyNumberingBtn");
@@ -314,201 +308,6 @@ function importMarkdownFile(file) {
   reader.onerror = () => setStatus("読み込みに失敗しました。");
   reader.readAsText(file);
 }
-
-// ---- hotline向け書き出し（項番マーカー＋サイドノート） ----
-// C:\minnanosaiban\hotline のoverrides/hooks/doc_indent.pyがそのまま展開できる
-// :N X[#anchor名]: マーカー形式で本文を書き出す。data-indent-level・data-hangingが唯一の
-// 情報源で、hotline側のpadN／idt／hg-idt(2/3)と直接対応する：
-//   hanging=0            → :Ni:（indent0なら:0i:＝<p class="doc idt">、一字下げの地の文）
-//   hanging=1/2/3         → :Nh: / :Nh2: / :Nh3:（第１・１・⑴・ア等の項番見出し）
-// 中央ぞろえ（タイトル）の段落だけはマーカー化せず生HTML（<p class="doc center">）で出す
-// （center/smaller/doc-gap-top等の稀な修飾はマーカー非対応、というhotline側の設計に合わせる）。
-// アンカー（#anchor名）は「項番の見出し（ぶら下げ有り）」または「サイドノートが付いている」
-// 段落にだけ p1, p2... と機械的に振る。意味のある名前への差し替えはhotline側で手動を想定
-// （386箇所の既存アンカーも人手で付けた名前で、自動生成では意味のある名前は作れないため）。
-const HOTLINE_HANGING_KIND = { 1: "h", 2: "h2", 3: "h3" };
-
-function hotlineEscapeText(s) {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-// #doc内のノードをhotline向けのインラインHTML文字列へ変換する。buildPrintNode（PDF化用）と
-// 考え方は同じだが、（1）太字はhotlineの既存慣習に合わせて<strong>ではなく<b>にする、
-// （2）サイドノートは本文へ埋め込まず上付き番号だけ残す（中身は呼び出し側で別ブロックのasideにする）
-// 点が異なる。
-function hotlineInlineHtml(node) {
-  if (node.nodeType === Node.TEXT_NODE) return hotlineEscapeText(node.textContent);
-  if (node.nodeType !== Node.ELEMENT_NODE) return "";
-  if (node.tagName === "BR") return "<br>";
-  if (node.classList && node.classList.contains("note-anchor")) {
-    const quoted = node.querySelector("span")?.textContent || "";
-    const num = node.querySelector(".note-num")?.textContent;
-    return hotlineEscapeText(quoted) + (num ? `<sup>${num}</sup>` : "");
-  }
-  const children = () => Array.from(node.childNodes).map(hotlineInlineHtml).join("");
-  if (node.classList && node.classList.contains("kenten")) {
-    // hotline側に.kentenクラスは無いため、見た目（-webkit-text-emphasis-style）をインラインで持たせる。
-    return `<span style="-webkit-text-emphasis-style: filled dot; text-emphasis-style: filled dot;">${children()}</span>`;
-  }
-  if (node.tagName === "STRONG" || node.tagName === "B") return `<b>${children()}</b>`;
-  if (node.tagName === "U") return `<u>${children()}</u>`;
-  return children();
-}
-
-function hotlineMarkerFor(indentLevel, hanging) {
-  return `:${indentLevel}${HOTLINE_HANGING_KIND[hanging] || "i"}`;
-}
-
-// notesByAnchorの中身をhotlineのサイドノート（<aside class="sidenote">、doc_indent.pyの
-// マーカー対象外＝生HTMLのまま素通りする）へ変換する。色「重要」はhotline既存の赤強調
-// （.strong-rd、eneos-saibanの「争う」等と同じ赤）に対応させる（黒／青の色分けは
-// レビュー中だけの区別なので、公開用のhotlineには引き継がない）。
-function hotlineNoteHtml(num, notes) {
-  const body = notes.map((note) => {
-    const html = formatNoteText(note.text);   // **太字**・<u>下線</u>をHTMLへ変換（画面の表示と同じ関数）
-    return note.color === "red" ? `<span class="strong-rd">${html}</span>` : html;
-  }).join("<br>");
-  return `<aside class="sidenote"><span class="num">${num}</span>${body}</aside>`;
-}
-
-// 1段落ぶんの出力（マーカー行 or 生HTML）＋その段落に付いているサイドノートのブロック列を返す。
-function buildHotlineParaOutput(paraEl, anchorSeqRef) {
-  const indentLevel = Number(paraEl.dataset.indentLevel || 0);
-  const hanging = Number(paraEl.dataset.hanging || 0);
-  let text = Array.from(paraEl.childNodes).map(hotlineInlineHtml).join("").trim();
-  if (!text) return [];
-  // H1〜H3（画面上の見出し表示用）は、hotline側にはpt指定の概念が無いため、意図だけ太字で残す。
-  if (paraEl.dataset.style) text = `<b>${text}</b>`;
-
-  const noteGroups = Array.from(paraEl.querySelectorAll(".note-anchor"))
-    .map((anchor) => {
-      const num = anchor.querySelector(".note-num")?.textContent;
-      const notes = notesByAnchor.get(anchor.dataset.anchorId) || [];
-      return num && notes.length ? { num, notes } : null;
-    })
-    .filter(Boolean);
-
-  const needsAnchor = hanging > 0 || noteGroups.length > 0;
-  const anchorPart = needsAnchor ? `#p${anchorSeqRef.n++}` : "";
-
-  const mainBlock = paraEl.dataset.align === "center"
-    ? `<p class="doc center">\n${text}\n</p>`   // タイトル等はマーカー化せず生HTMLで出す
-    : `${hotlineMarkerFor(indentLevel, hanging)}${anchorPart}: ${text}`;
-
-  return [mainBlock, ...noteGroups.map((g) => hotlineNoteHtml(g.num, g.notes))];
-}
-
-function buildHotlineMarkdown() {
-  const paras = Array.from(doc.querySelectorAll(".para"));
-  const imageCount = paras.filter((p) => p.classList.contains("para-image")).length;
-  const anchorSeqRef = { n: 1 };
-  const blocks = [];
-  paras.forEach((p) => {
-    if (p.classList.contains("para-image")) return;   // 画像はhotline書き出しの対象外（下の注記で警告）
-    blocks.push(...buildHotlineParaOutput(p, anchorSeqRef));
-  });
-  if (!blocks.length) return null;
-  return { md: blocks.join("\n\n") + "\n", imageCount };
-}
-
-// ---- hotline書き出しの保存先（File System Access API） ----
-// hotlineリポジトリのdocs/trial/parts/へ直接ファイルを書き込み、「ダウンロード→探す→
-// 貼り付け」の手作業を無くす。書面の再編集→再書き出しは同名ファイルの上書きで完結させる
-// 前提なので、ファイル名はタイトル由来の安定した名前にする（日時は付けない。日時付きの
-// 控えが必要な用途は.json保存が担う）。フォルダのハンドルはIndexedDBに永続化し、初回だけ
-// フォルダ選択・以後は許可の再確認のみ（Chromeはハンドル自体を構造化クローンで保存できる）。
-// localStorageでなくIndexedDBなのは、FileSystemDirectoryHandleが文字列化できないため。
-const IDB_NAME = "sidenote-pdf-doc";
-const IDB_STORE = "handles";
-const HOTLINE_DIR_KEY = "hotlineExportDir";
-
-function idbOpen() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(IDB_NAME, 1);
-    req.onupgradeneeded = () => req.result.createObjectStore(IDB_STORE);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-async function idbGet(key) {
-  const db = await idbOpen();
-  return new Promise((resolve, reject) => {
-    const rq = db.transaction(IDB_STORE, "readonly").objectStore(IDB_STORE).get(key);
-    rq.onsuccess = () => resolve(rq.result);
-    rq.onerror = () => reject(rq.error);
-  });
-}
-async function idbSet(key, value) {
-  const db = await idbOpen();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(IDB_STORE, "readwrite");
-    tx.objectStore(IDB_STORE).put(value, key);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
-// 保存先フォルダへmdを書き込む。戻り値はフォルダ名（表示用）。
-// File System Access API非対応（Firefox等）ならnullを返し、呼び出し側がダウンロードへ落とす。
-async function saveHotlineFileDirect(md, filename, forceRepick) {
-  if (!window.showDirectoryPicker) return null;
-  let dir = null;
-  if (!forceRepick) {
-    try { dir = await idbGet(HOTLINE_DIR_KEY); } catch (err) { /* 初回等、無ければ選ばせる */ }
-  }
-  if (dir) {
-    // 保存済みハンドルの権限はセッションごとに失効するため、毎回確認→必要なら再要求する
-    // （requestPermissionはユーザー操作起点でしか呼べないが、ここはボタンクリック中なのでOK）。
-    let perm = await dir.queryPermission({ mode: "readwrite" });
-    if (perm !== "granted") perm = await dir.requestPermission({ mode: "readwrite" });
-    if (perm !== "granted") dir = null;
-  }
-  if (!dir) {
-    dir = await window.showDirectoryPicker({ mode: "readwrite" });
-    try { await idbSet(HOTLINE_DIR_KEY, dir); } catch (err) { /* 保存失敗しても今回分の書き込みは続行 */ }
-  }
-  const fileHandle = await dir.getFileHandle(filename, { create: true });
-  const writable = await fileHandle.createWritable();
-  await writable.write(md);
-  await writable.close();
-  return dir.name;
-}
-
-// Ctrl+クリック＝クリップボードへコピー（ファイル保存なし。一部だけ手で貼りたい時の保険）。
-// Shift+クリック＝保存先フォルダを選び直す。通常クリック＝記憶したフォルダへ直接保存
-// （非対応ブラウザは従来どおりダウンロード）。
-async function exportHotlineMarkdown(e) {
-  const built = buildHotlineMarkdown();
-  if (!built) { setStatus("書き出す本文がありません。"); return; }
-  const { md, imageCount } = built;
-  const imageNote = imageCount ? `（画像${imageCount}件は対象外のため含まれていません）` : "";
-
-  if (e && e.ctrlKey) {
-    try {
-      await navigator.clipboard.writeText(md);
-      setStatus(`hotline向けMarkdownをクリップボードへコピーしました${imageNote}`);
-    } catch (err) {
-      console.error(err);
-      setStatus("クリップボードへのコピーに失敗しました。");
-    }
-    return;
-  }
-
-  const filename = `${sanitizeFilename(projectTitle()) || "hotline-export"}.md`;
-  try {
-    const dirName = await saveHotlineFileDirect(md, filename, e && e.shiftKey);
-    if (dirName !== null) {
-      setStatus(`hotline向けに保存しました：${dirName}/${filename}${imageNote}`);
-      return;
-    }
-  } catch (err) {
-    if (err && err.name === "AbortError") { setStatus("保存をキャンセルしました。"); return; }
-    console.error(err);   // 直接保存に失敗した場合は下のダウンロードへ落とす（書き出し自体は成立させる）
-  }
-  downloadBlob(new Blob([md], { type: "text/markdown" }), filename);
-  setStatus(`hotline向けに書き出しました（ダウンロード）：${filename}${imageNote}`);
-}
-exportHotlineBtn.onclick = (e) => exportHotlineMarkdown(e);
 
 // ---- 保存・読み込み（.jsonファイル） ----
 // 長文の作業を前提に、途中まで進めた内容をファイルとして残せるようにする。
@@ -1066,31 +865,6 @@ showNamesToggle.onchange = () => {
   renumberAndLayout();
 };
 
-// 冒頭の機能説明カード（#introSection）の表示オンオフ。「次回から表示しない」（カード側）と
-// 「冒頭の機能説明を表示する」（ヘルプ側）は同じ状態を裏表で操作する2つのスイッチなので、
-// どちらを動かしても両方のチェック状態を揃える。端末の個人設定としてlocalStorageへ。
-const SHOW_INTRO_KEY = "sidenote-pdf-show-intro-v1";
-let showIntro = true;
-(function loadShowIntroDefault() {
-  try {
-    const raw = localStorage.getItem(SHOW_INTRO_KEY);
-    if (raw !== null) showIntro = raw === "1";
-  } catch (err) { /* noop */ }
-})();
-function applyShowIntro() {
-  introSection.hidden = !showIntro;
-  introDismissToggle.checked = !showIntro;
-  showIntroToggle.checked = showIntro;
-}
-function setShowIntro(value) {
-  showIntro = value;
-  try { localStorage.setItem(SHOW_INTRO_KEY, showIntro ? "1" : "0"); } catch (err) { /* noop */ }
-  applyShowIntro();
-}
-applyShowIntro();
-introDismissToggle.onchange = () => setShowIntro(!introDismissToggle.checked);
-showIntroToggle.onchange = () => setShowIntro(showIntroToggle.checked);
-
 // 「設定」「ヘルプ」は同じ開閉パターン（同じボタンをもう一度押す、または他方を開くと閉じる）。
 function toggleDropdownPanel(panelEl, btnEl) {
   const opening = panelEl.hidden;
@@ -1103,7 +877,6 @@ function toggleDropdownPanel(panelEl, btnEl) {
   panelEl.style.left = `${window.scrollX + rect.left}px`;
 }
 settingsBtn.onclick = () => toggleDropdownPanel(settingsPanel, settingsBtn);
-helpBtn.onclick = () => toggleDropdownPanel(helpPanel, helpBtn);
 numberingSettingsBtn.onclick = () => toggleDropdownPanel(numberingPanel, numberingSettingsBtn);
 
 // ---- 「項番設定」パネル：見出し（H1〜H3）の見た目と、項番の型ごとのインデント・ぶら下げ ----
@@ -1193,7 +966,6 @@ applyNumberingBtn.onclick = applyNumbering;
 
 function openPopover(rect) {
   settingsPanel.hidden = true;
-  helpPanel.hidden = true;
   numberingPanel.hidden = true;
   popoverInput.value = "";
   popoverEl.hidden = false;
@@ -2053,8 +1825,6 @@ function setMode(mode) {
   formatToolbarEl.hidden = isPdf;
   // 「公文書仕様」も本文（段落）向けの文字サイズ・フォント上書きなので、pdfモードでは意味を持たず隠す。
   officialModeRow.hidden = isPdf;
-  // hotline書き出しも段落（data-indent-level等）が無いpdfモードでは意味を持たず隠す。
-  exportHotlineBtn.hidden = isPdf;
   // モード切り替え時に前の状態を持ち越さない（本文モード側のホバーアイコン）。
   paraHoverEl.hidden = true;
   hoveredPara = null;
