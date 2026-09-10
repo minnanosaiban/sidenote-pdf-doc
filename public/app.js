@@ -17,8 +17,6 @@ const popoverInput = document.getElementById("notePopoverInput");
 const titleInput = document.getElementById("titleInput");
 const saveBtn = document.getElementById("saveBtn");
 const savePdfBtn = document.getElementById("savePdfBtn");
-const officialModeRow = document.getElementById("officialModeRow");
-const officialModeToggle = document.getElementById("officialModeToggle");
 const printDocEl = document.getElementById("printDoc");
 const loadInput = document.getElementById("loadInput");
 const saveStatusEl = document.getElementById("saveStatus");
@@ -431,15 +429,6 @@ saveBtn.onclick = () => {
 // 原理的に起きない）。ページをまたぐレイアウトでは絶対座標（画面と同じ方式）が使えないため、
 // float方式を使う。
 
-// 「公文書仕様」（officialModeToggle）がオンの間だけ立てるフラグ。行政への提出を想定し、
-// サイドノートを余白ではなく文書の最後にまとめた文末脚注にし（printFootnoteMode）、
-// 文字サイズ・フォントもH1〜H3の設定を無視して統一する（printOfficialMode、buildPrintPara参照）。
-// collectedFootnotesは文末脚注モードの間だけ使う一時的な蓄積先で、buildPrintDoc呼び出しのたびに
-// 空にする（savePdfBtn.onclickとCtrl+Alt+Pのプレビュー、両方の入口で毎回リセットする）。
-let printOfficialMode = false;
-let printFootnoteMode = false;
-let collectedFootnotes = [];   // [{num, notes}, ...] 文中に現れた順
-
 // #doc内のノードをprintDoc用のDOMへ再帰的に組み立てる。
 function buildPrintNode(node) {
   if (node.nodeType === Node.TEXT_NODE) return document.createTextNode(node.textContent);
@@ -456,13 +445,8 @@ function buildPrintNode(node) {
       frag.appendChild(sup);
       // サイドノート本文を、対応する一文のすぐ後ろにインラインで埋め込む。段落を分割しないため、
       // ここに差し込んでもテキストの流れは途切れない（見た目はCSS側のfloatが担当する）。
-      // 文末脚注モード（公文書仕様）の間は、その場には埋め込まずcollectedFootnotesへ積んでおき、
-      // buildPrintDocの最後でまとめて並べる（本文中に残すのは上のsup番号だけ）。
       const notes = notesByAnchor.get(node.dataset.anchorId) || [];
-      if (notes.length) {
-        if (printFootnoteMode) collectedFootnotes.push({ num, notes });
-        else frag.appendChild(buildPrintAsideEl(num, notes));
-      }
+      if (notes.length) frag.appendChild(buildPrintAsideEl(num, notes));
     }
     return frag;
   }
@@ -483,8 +467,7 @@ function buildPrintNode(node) {
   return container;
 }
 
-// 番号＋注釈本文（複数件なら改行区切り）をcontainerへ組み立てる。余白のアサイド（buildPrintAsideEl）
-// と文末脚注（buildPrintFootnoteRow）はどちらもこの中身を使い、外側の入れ物だけが違う。
+// 番号＋注釈本文（複数件なら改行区切り）をcontainerへ組み立てる（余白のアサイド用）。
 function appendNoteContent(container, num, notes) {
   const sup = document.createElement("sup");
   sup.textContent = num;
@@ -513,15 +496,6 @@ function buildPrintAsideEl(num, notes) {
   return aside;
 }
 
-// 文末脚注1件ぶんの行。buildPrintAsideElと違いfloatさせない通常のブロックとして、
-// 文末脚注セクション（buildPrintDoc末尾）に出現順で積む。
-function buildPrintFootnoteRow(num, notes) {
-  const p = document.createElement("p");
-  p.className = "print-footnote-row";
-  appendNoteContent(p, num, notes);
-  return p;
-}
-
 // 段落は分割せず1つの<p class="print-para">のまま保つ（注釈のサイドノートはbuildPrintNode内で
 // 対応する一文の直後にインラインで埋め込み済み。見た目の位置はCSS側のfloatが担当する）。
 // 2026-08-16：かつての「段落を注釈の位置で複数の<p>に分割する」方式は、以前この方式は実機の
@@ -542,13 +516,7 @@ function buildPrintPara(paraEl) {
   // （スタイルの実際の見た目＝文字サイズ・太字は「項番設定」パネルのparaStyleSettingsから引く）。
   if (paraEl.dataset.align) p.style.textAlign = paraEl.dataset.align;
   const styleLook = paraStyleSettings[paraEl.dataset.style];
-  if (printOfficialMode) {
-    // 公文書仕様：文字サイズはH1〜H3の設定を無視し、中央ぞろえ＝タイトル扱いで16pt、
-    // それ以外は本文12ptに統一する（太字だけはH1〜H3のbold設定をそのまま引き継ぐ）。
-    p.style.fontSize = paraEl.dataset.align === "center" ? "16pt" : "12pt";
-  } else if (styleLook && styleLook.fontSizePt) {
-    p.style.fontSize = `${styleLook.fontSizePt}pt`;
-  }
+  if (styleLook && styleLook.fontSizePt) p.style.fontSize = `${styleLook.fontSizePt}pt`;
   if (styleLook && styleLook.bold) p.style.fontWeight = "700";
   Array.from(paraEl.childNodes).forEach((n) => p.appendChild(buildPrintNode(n)));
   return p;
@@ -556,13 +524,9 @@ function buildPrintPara(paraEl) {
 
 function buildPrintDoc() {
   printDocEl.innerHTML = "";
-  collectedFootnotes = [];   // 文末脚注モードの蓄積先をこの回の分だけにする
 
-  // 公文書仕様では、このファイル管理用のタイトル（保存ファイル名に使うtitleInputの値）は
-  // 文書そのものの内容ではないため出さない。実際の文書タイトルは本文側で中央ぞろえした段落
-  // （buildPrintPara側で16pt扱いになる）をユーザーが自分で用意する想定。
   const title = projectTitle();
-  if (title && !printOfficialMode) {
+  if (title) {
     const titleEl = document.createElement("div");
     titleEl.className = "print-title";
     titleEl.textContent = title;
@@ -582,10 +546,7 @@ function buildPrintDoc() {
       const badge = child.querySelector(".note-anchor");
       const num = badge?.querySelector(".note-num")?.textContent;
       const notes = badge ? notesByAnchor.get(badge.dataset.anchorId) || [] : [];
-      if (num && notes.length) {
-        if (printFootnoteMode) collectedFootnotes.push({ num, notes });
-        else printDocEl.appendChild(buildPrintAsideEl(num, notes));
-      }
+      if (num && notes.length) printDocEl.appendChild(buildPrintAsideEl(num, notes));
     } else {
       // buildPrintNode/buildPrintParaは再帰的なDOM構築のみ（複雑な分割ロジックは無い）なので
       // 通常は失敗しないはずだが、想定外の構造（壊れたデータの.json読み込み時等）でも印刷全体
@@ -603,19 +564,6 @@ function buildPrintDoc() {
     }
   });
 
-  // 文末脚注モード：本文を組み終えた後、集めておいた注釈を出現順のまま文書の最後にまとめて置く
-  // （本文中に残っているのは各注釈の上付き番号だけ）。
-  if (printFootnoteMode && collectedFootnotes.length) {
-    const section = document.createElement("div");
-    section.className = "print-footnotes";
-    const heading = document.createElement("div");
-    heading.className = "print-footnotes-heading";
-    heading.textContent = "脚注";
-    section.appendChild(heading);
-    collectedFootnotes.forEach(({ num, notes }) => section.appendChild(buildPrintFootnoteRow(num, notes)));
-    printDocEl.appendChild(section);
-  }
-
   // 直後にwindow.print()（またはプレビュー用のクラス切り替え）が呼ばれる前に、大量のfloat要素を
   // 書き換えた後のレイアウトを強制的に確定させる（読み取りアクセスでリフローを強制する定番の手法）。
   // これを入れずに直後printすると、印刷専用のレンダリングパスがレイアウト未確定のまま走り、
@@ -630,24 +578,15 @@ function buildPrintDocForCurrentMode() {
   buildPrintDoc();
 }
 
-// 印刷直前に「公文書仕様」チェックボックスの状態をprintOfficialMode/printFootnoteModeへ反映する
-// （savePdfBtn.onclickとCtrl+Alt+Pのプレビュー、両方の入口で毎回呼ぶ）。
-function applyOfficialModeFlags() {
-  printOfficialMode = officialModeToggle.checked;
-  printFootnoteMode = printOfficialMode;
-}
-
 savePdfBtn.onclick = () => {
   try {
-    applyOfficialModeFlags();
     buildPrintDocForCurrentMode();
     document.body.classList.add("print-active");
-    document.body.classList.toggle("official-mode", printOfficialMode);
     window.print();   // Chromeではこの呼び出しはダイアログが閉じるまでブロックするので、直後にクラスを外してよい
   } finally {
     // buildPrintDoc()やwindow.print()の途中で何か例外が起きても、印刷専用の見た目のまま
     // 編集画面に固まってしまわないよう、必ずクラスを外す。
-    document.body.classList.remove("print-active", "official-mode");
+    document.body.classList.remove("print-active");
   }
 };
 
@@ -657,10 +596,8 @@ savePdfBtn.onclick = () => {
 document.addEventListener("keydown", (e) => {
   if (e.ctrlKey && e.altKey && e.key.toLowerCase() === "p") {
     e.preventDefault();
-    applyOfficialModeFlags();
     buildPrintDocForCurrentMode();
-    const nowActive = document.body.classList.toggle("print-active");
-    document.body.classList.toggle("official-mode", nowActive && printOfficialMode);
+    document.body.classList.toggle("print-active");
   }
 });
 
@@ -1823,8 +1760,6 @@ function setMode(mode) {
   // 本文用の書式ツールバーはPDFページには適用できないため、pdfモードでは隠す
   // （sidenote-pdfには無い、doc版固有の対応）。
   formatToolbarEl.hidden = isPdf;
-  // 「公文書仕様」も本文（段落）向けの文字サイズ・フォント上書きなので、pdfモードでは意味を持たず隠す。
-  officialModeRow.hidden = isPdf;
   // モード切り替え時に前の状態を持ち越さない（本文モード側のホバーアイコン）。
   paraHoverEl.hidden = true;
   hoveredPara = null;
