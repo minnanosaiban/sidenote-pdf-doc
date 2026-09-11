@@ -420,6 +420,15 @@ saveBtn.onclick = () => {
   setStatus(`保存しました：${filename}`);
 };
 
+// Ctrl+S（Macはcmd+S）はブラウザ標準の「ページを保存」を横取りし、「保存」ボタンと同じ動作にする。
+// フォーカスがタイトル欄・ノート入力欄など#docの外にある時も効くよう、document全体で拾う。
+document.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+    e.preventDefault();
+    saveBtn.click();
+  }
+});
+
 // ---- A4 PDF化（ブラウザの印刷機能を使う）----
 // 独自にPDFを組み立てるのではなく、印刷用CSSを当てた#printDocをブラウザの印刷（→PDFに保存）に渡す方式。
 // サイドノートは段落を分割せず、注釈の直後にインラインで埋め込んだ上でfloat:right＋マイナスマージンにより
