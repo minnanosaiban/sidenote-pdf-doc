@@ -1371,6 +1371,41 @@ function insertNewParagraph() {
   if (rangeOverlapsLockedAnchor(range)) return;
   const currentPara = getCurrentPara();   // Enter前の段落。配置・インデント・ぶら下げ・スタイルを引き継ぐために控えておく
 
+  // execCommand("insertHTML")に段落の分割を任せると、
+  //   ・段落が既に空の状態でもう一度Enterを押しても2つ目の空段落が生まれない
+  //     （2026-09-13指摘：Enterを2回続けても空行が増えない）
+  //   ・段落の途中にカーソルを置いてEnterで割ると「前半／余分な空段落／後半」の3つになる
+  //     （同日、上の修正時に発覚した別バグ）
+  // という不具合があったため、この2パターン（段落が空、またはカーソルより後ろに何か残っている）
+  // だけは自前のRange操作で確実に2つに割る（Ctrl+Zの対象にはならない＝画像挿入と同じ既知の
+  // 制約として許容する）。カーソルが段落の末尾にあるだけの最も多い操作は、これまで通り
+  // execCommand経由でundoできるようにする。
+  if (currentPara && range.collapsed) {
+    const tailRange = document.createRange();
+    tailRange.setStart(range.startContainer, range.startOffset);
+    if (currentPara.lastChild) tailRange.setEndAfter(currentPara.lastChild);
+    else tailRange.setEnd(currentPara, 0);
+    const isEmpty = currentPara.textContent === "";
+    const hasTail = tailRange.toString().length > 0;
+    if (isEmpty || hasTail) {
+      const afterFragment = tailRange.extractContents();
+      const blankPara = document.createElement("div");
+      blankPara.className = "para";
+      blankPara.appendChild(afterFragment);
+      if (!blankPara.hasChildNodes()) blankPara.innerHTML = "<br>";
+      if (!currentPara.hasChildNodes()) currentPara.innerHTML = "<br>";
+      currentPara.after(blankPara);
+      inheritParaFormat(currentPara, blankPara);
+      const br = document.createRange();
+      br.setStart(blankPara, 0);
+      br.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(br);
+      doc.dispatchEvent(new Event("input"));
+      return;
+    }
+  }
+
   // 挿入した.paraを一時属性で目印してすぐ拾い、カーソルをその中（brの手前＝空行の先頭）に置く。
   document.execCommand("insertHTML", false, '<div class="para" data-new-para="1"><br></div>');
   const newPara = doc.querySelector('.para[data-new-para="1"]');
